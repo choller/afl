@@ -144,6 +144,10 @@ checks or alter some of the more exotic semantics of the tool:
 
   - In QEMU mode (-Q), AFL_PATH will be searched for afl-qemu-trace.
 
+  - Setting AFL_DEBUG_CHILD_OUTPUT will prevent the stdout/stderr output from
+    the fork server from being suppressed. This can be used to see possible
+    error messages from the child for debugging purposes.
+
 4) Settings for afl-qemu-trace
 ------------------------------
 
