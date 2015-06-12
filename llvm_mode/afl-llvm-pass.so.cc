@@ -29,6 +29,11 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include <list>
+#include <string>
+#include <fstream>
+#include "llvm/DebugInfo.h"
+
 #include "llvm/ADT/Statistic.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LegacyPassManager.h"
@@ -45,7 +50,21 @@ namespace {
     public:
 
       static char ID;
-      AFLCoverage() : ModulePass(ID) { }
+      AFLCoverage() : ModulePass(ID) { 
+        char* instWhiteListFilename = getenv("AFL_INST_WHITELIST");
+        if (instWhiteListFilename) {
+          std::ifstream fileStream;
+          fileStream.open(instWhiteListFilename);
+          if (!fileStream) report_fatal_error("Unable to open AFL_INST_WHITELIST");
+
+          std::string line;
+          getline(fileStream, line);
+          while (fileStream) {
+            myWhitelist.push_back(line);
+            getline(fileStream, line);
+          }
+        }
+      }
 
       bool runOnModule(Module &M) override;
 
@@ -53,6 +72,9 @@ namespace {
         return "American Fuzzy Lop Instrumentation";
       }
 
+    protected:
+
+      std::list<std::string> myWhitelist;
   };
 
 }
@@ -110,6 +132,48 @@ bool AFLCoverage::runOnModule(Module &M) {
 
       BasicBlock::iterator IP = BB.getFirstInsertionPt();
       IRBuilder<> IRB(IP);
+
+      if (!myWhitelist.empty()) {
+          bool instrumentBlock = false;
+
+          /* Get the current location using debug information.
+           * For now, just instrument the block if we are not able
+           * to determine our location. */
+          DebugLoc Loc = IP->getDebugLoc();
+          if ( !Loc.isUnknown() ) {
+              DILocation cDILoc(Loc.getAsMDNode(M.getContext()));
+              DILocation oDILoc = cDILoc.getOrigLocation();
+
+              unsigned int instLine = oDILoc.getLineNumber();
+              StringRef instFilename = oDILoc.getFilename();
+
+              if (instFilename.str().empty()) {
+                  /* If the original location is empty, use the actual location */
+                  instFilename = cDILoc.getFilename();
+                  instLine = cDILoc.getLineNumber();
+              }
+
+              /* Continue only if we know where we actually are */
+              if (!instFilename.str().empty()) {
+                  for (std::list<std::string>::iterator it = myWhitelist.begin(); it != myWhitelist.end(); ++it) {
+                      /* We don't check for filename equality here because
+                       * filenames might actually be full paths. Instead we
+                       * check that the actual filename ends in the filename
+                       * specified in the list. */
+                      if (instFilename.str().length() >= it->length()) {
+                          if (instFilename.str().compare(instFilename.str().length() - it->length(), it->length(), *it) == 0) {
+                              instrumentBlock = true;
+                              break;
+                          }
+                      }
+                  }
+              }
+          }
+
+          /* Either we couldn't figure out our location or the location is
+           * not whitelisted, so we skip instrumentation. */
+          if (!instrumentBlock) continue;
+      }
 
       if (R(100) >= inst_ratio) continue;
 

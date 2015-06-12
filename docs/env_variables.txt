@@ -62,6 +62,13 @@ tools make fairly broad use of environmental variables:
 
   - Setting AFL_QUIET will prevent afl-cc and afl-as banners from being
     displayed during compilation, in case you find them distracting.
+   
+  - AFL_INST_WHITELIST can be used to provide a whitelist of files to be
+    instrumented, rather than instrumenting all files. If this is set to
+    a non-empty file, then only filenames that match the filenames on the
+    list will be instrumented. For matching, the filename that is being
+    compiled must end in the filename contained in the whitelist (otherwise
+    absolute paths during compilation would break the list).
 
 2) Settings for afl-clang-fast
 ------------------------------
