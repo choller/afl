@@ -3564,6 +3564,10 @@ static void maybe_delete_out_dir(void) {
   if (unlink(fn) && errno != ENOENT) goto dir_cleanup_failed;
   ck_free(fn);
 
+  fn = alloc_printf("%s/cmdline", out_dir);
+  if (unlink(fn) && errno != ENOENT) goto dir_cleanup_failed;
+  ck_free(fn);
+
   OKF("Output dir cleanup successful.");
 
   /* Wow... is that all? If yes, celebrate! */
@@ -6788,7 +6792,30 @@ static void setup_dirs_fds(void) {
                      "pending_total, pending_favs, map_size, unique_crashes, "
                      "unique_hangs, max_depth, execs_per_sec\n");
                      /* ignore errors */
+}
 
+static void setup_cmdline_file(char** argv) {
+  u8* tmp;
+  s32 fd;
+  u32 i = 0;
+
+  FILE* cmdline_file = NULL;
+
+  /* Store the command line to reproduce our findings */
+  tmp = alloc_printf("%s/cmdline", out_dir);
+  fd = open(tmp, O_WRONLY | O_CREAT | O_EXCL, 0600);
+  if (fd < 0) PFATAL("Unable to create '%s'", tmp);
+  ck_free(tmp);
+
+  cmdline_file = fdopen(fd, "w");
+  if (!cmdline_file) PFATAL("fdopen() failed");
+
+  while (argv[i]) {
+    fprintf(cmdline_file, "%s\n", argv[i]);
+    i++;
+  }
+
+  fclose(cmdline_file);
 }
 
 
@@ -7472,6 +7499,7 @@ int main(int argc, char** argv) {
   setup_shm();
 
   setup_dirs_fds();
+  setup_cmdline_file(argv + optind);
   read_testcases();
   load_auto();
 
