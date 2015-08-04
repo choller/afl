@@ -164,8 +164,7 @@ fi
 if [ ! "$MEM_LIMIT" = "none" ]; then
 
   if [ "$MEM_LIMIT" -lt "5" ]; then
-    echo "[-] Error: dangerously low memory limit." 1>&2
-    exit 1
+    echo "[-] Warning: dangerously low memory limit." 1>&2
   fi
 
 fi
