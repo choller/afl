@@ -88,6 +88,7 @@ static u8  skip_deterministic,        /* Skip deterministic stages?       */
            resuming_fuzz,             /* Resuming an older fuzzing job?   */
            timeout_given,             /* Specific timeout given?          */
            not_on_tty,                /* stdout is not a tty              */
+           override_termsize,         /* Assume 80x25 terminal size       */
            uses_asan,                 /* Target uses ASAN?                */
            no_forkserver,             /* Disable forkserver?              */
            crash_mode,                /* Crash mode! Yeah!                */
@@ -6619,7 +6620,7 @@ static void check_terminal(void) {
     return;
   }
 
-  if (ws.ws_row < 25 || ws.ws_col < 80) {
+  if (!override_termsize && (ws.ws_row < 25 || ws.ws_col < 80)) {
 
     SAYF("\n" cLRD "[-] " cRST
          "Oops, your terminal window seems to be smaller than 80 x 25 characters.\n"
@@ -7303,7 +7304,7 @@ int main(int argc, char** argv) {
 
   doc_path = access(DOC_PATH, F_OK) ? "docs" : DOC_PATH;
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:Q")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:Qs")) > 0)
 
     switch (opt) {
 
@@ -7450,6 +7451,13 @@ int main(int argc, char** argv) {
         qemu_mode = 1;
 
         if (!mem_limit_given) mem_limit = MEM_LIMIT_QEMU;
+
+        break;
+
+      case 's':
+
+        if (override_termsize) FATAL("Multiple -s options not supported");
+        override_termsize = 1;
 
         break;
 
