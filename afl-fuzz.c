@@ -88,7 +88,7 @@ static u8  skip_deterministic,        /* Skip deterministic stages?       */
            resuming_fuzz,             /* Resuming an older fuzzing job?   */
            timeout_given,             /* Specific timeout given?          */
            not_on_tty,                /* stdout is not a tty              */
-           override_termsize,         /* Assume 80x25 terminal size       */
+           term_too_small,            /* terminal dimensions too small    */
            uses_asan,                 /* Target uses ASAN?                */
            no_forkserver,             /* Disable forkserver?              */
            crash_mode,                /* Crash mode! Yeah!                */
@@ -2494,8 +2494,8 @@ static void check_map_coverage(void) {
 static void perform_dry_run(char** argv) {
 
   struct queue_entry* q = queue;
-  u32 id = 0;
   u32 cal_failures = 0;
+  u8* skip_crashes = getenv("AFL_SKIP_CRASHES");
 
   while (q) {
 
@@ -2578,6 +2578,13 @@ static void perform_dry_run(char** argv) {
       case FAULT_CRASH:  
 
         if (crash_mode) break;
+
+        if (skip_crashes) {
+          WARNF("Test case results in a crash (skipping)");
+          q->cal_failed = CAL_CHANCES;
+          cal_failures++;
+          break;
+        }
 
         if (mem_limit) {
 
@@ -2663,17 +2670,18 @@ static void perform_dry_run(char** argv) {
     if (q->var_behavior) WARNF("Instrumentation output varies across runs.");
 
     q = q->next;
-    id++;
 
   }
 
   if (cal_failures) {
 
     if (cal_failures == queued_paths)
-      FATAL("All test cases time out, giving up!");
+      FATAL("All test cases time out%s, giving up!",
+            skip_crashes ? " or crash" : "");
 
-    WARNF("Skipped %u test cases (%0.02f%%) due to timeouts.", cal_failures,
-          ((double)cal_failures) * 100 / queued_paths);
+    WARNF("Skipped %u test cases (%0.02f%%) due to timeouts%s.", cal_failures,
+          ((double)cal_failures) * 100 / queued_paths,
+          skip_crashes ? " or crashes" : "");
 
     if (cal_failures * 5 > queued_paths)
       WARNF(cLRD "High percentage of rejected test cases, check settings!");
@@ -3171,6 +3179,7 @@ static void write_stats_file(double bitmap_cvg, double eps) {
              "execs_done     : %llu\n"
              "execs_per_sec  : %0.02f\n"
              "paths_total    : %u\n"
+             "paths_favored  : %u\n"
              "paths_found    : %u\n"
              "paths_imported : %u\n"
              "max_depth      : %u\n"
@@ -3190,8 +3199,8 @@ static void write_stats_file(double bitmap_cvg, double eps) {
              "command_line   : %s\n",
              start_time / 1000, get_cur_time() / 1000, getpid(),
              queue_cycle ? (queue_cycle - 1) : 0, total_execs, eps,
-             queued_paths, queued_discovered, queued_imported, max_depth,
-             current_entry, pending_favored, pending_not_fuzzed,
+             queued_paths, queued_favored, queued_discovered, queued_imported,
+             max_depth, current_entry, pending_favored, pending_not_fuzzed,
              queued_variable, bitmap_cvg, unique_crashes, unique_hangs,
              last_path_time / 1000, last_crash_time / 1000,
              last_hang_time / 1000, exec_tmout, use_banner, orig_cmdline);
@@ -3512,9 +3521,19 @@ static void maybe_delete_out_dir(void) {
     time_t cur_t = time(0);
     struct tm* t = localtime(&cur_t);
 
+#ifndef SIMPLE_FILES
+
     u8* nfn = alloc_printf("%s.%04u-%02u-%02u-%02u:%02u:%02u", fn,
                            t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
                            t->tm_hour, t->tm_min, t->tm_sec);
+
+#else
+
+    u8* nfn = alloc_printf("%s_%04u%02u%02u%02u%02u%02u", fn,
+                           t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
+                           t->tm_hour, t->tm_min, t->tm_sec);
+
+#endif /* ^!SIMPLE_FILES */
 
     rename(fn, nfn); /* Ignore errors. */
     ck_free(nfn);
@@ -3533,9 +3552,19 @@ static void maybe_delete_out_dir(void) {
     time_t cur_t = time(0);
     struct tm* t = localtime(&cur_t);
 
+#ifndef SIMPLE_FILES
+
     u8* nfn = alloc_printf("%s.%04u-%02u-%02u-%02u:%02u:%02u", fn,
                            t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
                            t->tm_hour, t->tm_min, t->tm_sec);
+
+#else
+
+    u8* nfn = alloc_printf("%s_%04u%02u%02u%02u%02u%02u", fn,
+                           t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
+                           t->tm_hour, t->tm_min, t->tm_sec);
+
+#endif /* ^!SIMPLE_FILES */
 
     rename(fn, nfn); /* Ignore errors. */
     ck_free(nfn);
@@ -3589,6 +3618,9 @@ dir_cleanup_failed:
   FATAL("Output directory cleanup failed");
 
 }
+
+
+static void check_term_size(void);
 
 
 /* A spiffy retro stats screen! This is called every stats_update_freq
@@ -3686,9 +3718,20 @@ static void show_stats(void) {
     SAYF(TERM_CLEAR CURSOR_HIDE);
     clear_screen = 0;
 
+    check_term_size();
+
   }
 
   SAYF(TERM_HOME);
+
+  if (term_too_small) {
+
+    SAYF(cBRI "Your terminal is too small to display the UI.\n"
+         "Please resize terminal window to at least 80x25.\n" cNOR);
+
+    return;
+
+  }
 
   /* Let's start by drawing a centered banner. */
 
@@ -3902,7 +3945,7 @@ static void show_stats(void) {
 
     sprintf(tmp, "%s/%s, %s/%s, %s/%s",
             DI(stage_finds[STAGE_FLIP1]), DI(stage_cycles[STAGE_FLIP1]),
-            DI(stage_finds[STAGE_FLIP4]), DI(stage_cycles[STAGE_FLIP2]),
+            DI(stage_finds[STAGE_FLIP2]), DI(stage_cycles[STAGE_FLIP2]),
             DI(stage_finds[STAGE_FLIP4]), DI(stage_cycles[STAGE_FLIP4]));
 
   }
@@ -6604,9 +6647,9 @@ static void fix_up_banner(u8* name) {
 }
 
 
-/* Check terminal dimensions. */
+/* Check if we're on TTY. */
 
-static void check_terminal(void) {
+static void check_if_tty(void) {
 
   struct winsize ws;
 
@@ -6619,20 +6662,20 @@ static void check_terminal(void) {
 
     return;
   }
+}
 
-  if (!override_termsize && (ws.ws_row < 25 || ws.ws_col < 80)) {
 
-    SAYF("\n" cLRD "[-] " cRST
-         "Oops, your terminal window seems to be smaller than 80 x 25 characters.\n"
-         "    That's not enough for afl-fuzz to correctly draw its fancy ANSI UI!\n\n"
+/* Check terminal dimensions after resize. */
 
-         "    Depending on the terminal software you are using, you should be able to\n"
-         "    resize the window by dragging its edges, or to adjust the dimensions in\n"
-         "    the settings menu.\n");
+static void check_term_size(void) {
 
-    FATAL("Please resize terminal to 80x25 or more");
+  struct winsize ws;
 
-  }
+  term_too_small = 0;
+
+  if (ioctl(1, TIOCGWINSZ, &ws)) return;
+
+  if (ws.ws_row < 25 || ws.ws_col < 80) term_too_small = 1;
 
 }
 
@@ -7352,8 +7395,8 @@ int main(int argc, char** argv) {
 
           if (timeout_given) FATAL("Multiple -t options not supported");
 
-          if (sscanf(optarg, "%u%c", &exec_tmout, &suffix) < 1)
-            FATAL("Bad syntax used for -t");
+          if (sscanf(optarg, "%u%c", &exec_tmout, &suffix) < 1 ||
+              optarg[0] == '-') FATAL("Bad syntax used for -t");
 
           if (exec_tmout < 5) FATAL("Dangerously low value of -t");
 
@@ -7377,8 +7420,8 @@ int main(int argc, char** argv) {
 
           }
 
-          if (sscanf(optarg, "%llu%c", &mem_limit, &suffix) < 1)
-            FATAL("Bad syntax used for -m");
+          if (sscanf(optarg, "%llu%c", &mem_limit, &suffix) < 1 ||
+              optarg[0] == '-') FATAL("Bad syntax used for -m");
 
           switch (suffix) {
 
@@ -7454,13 +7497,6 @@ int main(int argc, char** argv) {
 
         break;
 
-      case 's':
-
-        if (override_termsize) FATAL("Multiple -s options not supported");
-        override_termsize = 1;
-
-        break;
-
       default:
 
         usage(argv[0]);
@@ -7497,7 +7533,7 @@ int main(int argc, char** argv) {
 
   fix_up_banner(argv[optind]);
 
-  check_terminal();
+  check_if_tty();
 
   get_core_count();
   check_crash_handling();
