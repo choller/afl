@@ -16,7 +16,7 @@ Python AFL (Jakub Wilk)
   Allows fuzz-testing of Python programs. Uses custom instrumentation and its
   own forkserver.
 
-  https://bitbucket.org/jwilk/python-afl
+  http://jwilk.net/software/python-afl
 
 Go-fuzz (Dmitry Vyukov)
 -----------------------
@@ -118,6 +118,13 @@ afl-fuzzing-scripts (Tobias Ospelt)
 
   https://github.com/floyd-fuh/afl-fuzzing-scripts/
 
+afl-sid (Jacek Wielemborek)
+---------------------------
+
+  Allows users to more conveniently build and deploy AFL via Docker.
+
+  https://github.com/d33tah/afl-sid
+
 -------------------------------------
 Crash triage, coverage analysis, etc:
 -------------------------------------
@@ -210,7 +217,6 @@ Building harnesses for DNS servers (Jonathan Foote, Ron Bowes)
 
   https://www.fastly.com/blog/how-to-fuzz-server-american-fuzzy-lop
   https://goo.gl/j9EgFf
-
 
 Fuzzer shell for SQLite (Richard Hipp)
 --------------------------------------

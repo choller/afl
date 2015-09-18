@@ -13,8 +13,79 @@ Want to stay in the loop on major new features? Join our mailing list by
 sending a mail to <afl-users+subscribe@googlegroups.com>.
 
 Not sure if you should upgrade? The lowest currently recommended version
-is 1.76b. If you're stuck on an earlier release, it's strongly advisable
+is 1.92b. If you're stuck on an earlier release, it's strongly advisable
 to get on with the times.
+
+--------------
+Version 1.94b:
+--------------
+
+  - Changed allocator alignment to improve support for non-x86 systems (now
+    that llvm_mode makes this more feasible).
+
+  - Fixed a minor typo in afl-cmin. Spotted by Jonathan Neuschafer.
+
+  - Fixed an obscure bug that would affect people trying to use afl-gcc
+    with $TMP set but $TMPDIR absent. Spotted by Jeremy Barnes.
+
+--------------
+Version 1.93b:
+--------------
+
+  - Hopefully fixed a problem with MacOS X and persistent mode, spotted by
+    Leo Barnes.
+
+--------------
+Version 1.92b:
+--------------
+
+  - Made yet another C++ fix (namespaces). Reported by Daniel Lockyer.
+
+--------------
+Version 1.91b:
+--------------
+
+  - Made another fix to make 1.90b actually work properly with C++ (d'oh).
+    Problem spotted by Daniel Lockyer.
+
+--------------
+Version 1.90b:
+--------------
+
+  - Fixed a minor typo spotted by Kai Zhao; and made several other minor updates
+    to docs.
+
+  - Updated the project URL for python-afl. Requested by Jakub Wilk.
+
+  - Fixed a potential problem with deferred mode signatures getting optimized
+    out by the linker (with --gc-sections).
+
+--------------
+Version 1.89b:
+--------------
+
+  - Revamped the support for persistent and deferred forkserver modes.
+    Both now feature simpler syntax and do not require companion env
+    variables. Suggested by Jakub Wilk.
+
+  - Added a bit more info about afl-showmap. Suggested by Jacek Wielemborek.
+
+--------------
+Version 1.88b:
+--------------
+
+  - Made AFL_EXIT_WHEN_DONE work in non-tty mode. Issue spotted by
+    Jacek Wielemborek.
+
+--------------
+Version 1.87b:
+--------------
+
+  - Added QuickStartGuide.txt, a one-page quick start doc.
+
+  - Fixed several typos spotted by Dominique Pelle.
+
+  - Revamped several parts of README.
 
 --------------
 Version 1.86b:

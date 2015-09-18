@@ -99,7 +99,7 @@ static void edit_params(u32 argc, char** argv) {
   u8 fortify_set = 0, asan_set = 0, x_set = 0, maybe_linking = 1;
   u8 *name;
 
-  cc_params = ck_alloc((argc + 32) * sizeof(u8*));
+  cc_params = ck_alloc((argc + 64) * sizeof(u8*));
 
   name = strrchr(argv[0], '/');
   if (!name) name = argv[0]; else name++;
@@ -176,7 +176,47 @@ static void edit_params(u32 argc, char** argv) {
 
   }
 
-  cc_params[cc_par_cnt++] = "-D__AFL_HAVE_MANUAL_INIT=1";
+  cc_params[cc_par_cnt++] = "-D__AFL_HAVE_MANUAL_CONTROL=1";
+
+  /* When the user tries to use persistent or deferred forkserver modes by
+     appending a single line to the program, we want to reliably inject a
+     signature into the binary (to be picked up by afl-fuzz) and we want
+     to call a function from the runtime .o file. This is unnecessarily
+     painful for three reasons:
+
+     1) We need to convince the compiler not to optimize out the signature.
+        This is done with __attribute__((used)).
+
+     2) We need to convince the linker, when called with -Wl,--gc-sections,
+        not to do the same. This is done by forcing an assignment to a
+        'volatile' pointer.
+
+     3) We need to declare __afl_persistent_loop() in the global namespace,
+        but doing this within a method in a class is hard - :: and extern "C"
+        are forbidden and __attribute__((alias(...))) doesn't work. Hence the
+        __asm__ aliasing trick.
+
+   */
+
+  cc_params[cc_par_cnt++] = "-D__AFL_LOOP(_A)="
+    "({ static volatile char *_B __attribute__((used)); "
+    " _B = (char*)\"" PERSIST_SIG "\"; "
+#ifdef __APPLE__
+    "int _L(unsigned int) __asm__(\"___afl_persistent_loop\"); "
+#else
+    "int _L(unsigned int) __asm__(\"__afl_persistent_loop\"); "
+#endif /* ^__APPLE__ */
+    "_L(_A); })";
+
+  cc_params[cc_par_cnt++] = "-D__AFL_INIT()="
+    "do { static volatile char *_A __attribute__((used)); "
+    " _A = (char*)\"" DEFER_SIG "\"; "
+#ifdef __APPLE__
+    "void _I(void) __asm__(\"___afl_manual_init\"); "
+#else
+    "void _I(void) __asm__(\"__afl_manual_init\"); "
+#endif /* ^__APPLE__ */
+    "_I(); } while (0)";
 
   if (maybe_linking) {
 
