@@ -71,6 +71,13 @@ Note: if you want the LLVM helper to be installed on your system for all
 users, you need to build it before issuing 'make install' in the parent
 directory.
 
+If you are building with an LLVM version lower than 3.7, you need to specify
+the appropriate version on the command line when building the instrumentation.
+
+For example, on Ubuntu for LLVM 3.5, you would use:
+
+LLVM_CONFIG=llvm-config-3.5 CXXFLAGS="-DLLVM35" make
+
 3) Gotchas, feedback, bugs
 --------------------------
 
