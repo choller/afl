@@ -2,11 +2,13 @@
    american fuzzy lop - LLVM-mode instrumentation pass
    ---------------------------------------------------
 
-   Written by Laszlo Szekeres <lszekeres@google.com> and
-              Michal Zalewski <lcamtuf@google.com>
+   Written by Laszlo Szekeres <lszekeres@google.com>,
+              Michal Zalewski <lcamtuf@google.com> and
+              Christian Holler <choller@mozilla.com>
 
    LLVM integration design comes from Laszlo Szekeres. C bits copied-and-pasted
-   from afl-as.c are Michal's fault.
+   from afl-as.c are Michal's fault. Partial instrumentation support added by
+   Christian Holler.
 
    Copyright 2015 Google Inc. All rights reserved.
 
@@ -32,7 +34,16 @@
 #include <list>
 #include <string>
 #include <fstream>
+
+#if defined(LLVM34)
 #include "llvm/DebugInfo.h"
+#else
+#include "llvm/IR/DebugInfo.h"
+#endif
+
+#if defined(LLVM34) || defined(LLVM35) || defined(LLVM36)
+#define LLVM_OLD_DEBUG_API
+#endif
 
 #include "llvm/ADT/Statistic.h"
 #include "llvm/IR/IRBuilder.h"
@@ -140,7 +151,13 @@ bool AFLCoverage::runOnModule(Module &M) {
            * For now, just instrument the block if we are not able
            * to determine our location. */
           DebugLoc Loc = IP->getDebugLoc();
+#ifdef LLVM_OLD_DEBUG_API
           if ( !Loc.isUnknown() ) {
+#else
+          if ( Loc ) {
+#endif /* LLVM_OLD_DEBUG_API */
+
+#ifdef LLVM_OLD_DEBUG_API
               DILocation cDILoc(Loc.getAsMDNode(M.getContext()));
               DILocation oDILoc = cDILoc.getOrigLocation();
 
@@ -152,6 +169,21 @@ bool AFLCoverage::runOnModule(Module &M) {
                   instFilename = cDILoc.getFilename();
                   instLine = cDILoc.getLineNumber();
               }
+#else
+              DILocation *cDILoc = dyn_cast<DILocation>(Loc.getAsMDNode());
+
+              unsigned int instLine = cDILoc->getLine();
+              StringRef instFilename = cDILoc->getFilename();
+
+              if (instFilename.str().empty()) {
+                  /* If the original location is empty, try using the inlined location */
+                  DILocation *oDILoc = cDILoc->getInlinedAt();
+                  if (oDILoc) {
+                      instFilename = oDILoc->getFilename();
+                      instLine = oDILoc->getLine();
+                  }
+              }
+#endif /* LLVM_OLD_DEBUG_API */
 
               /* Continue only if we know where we actually are */
               if (!instFilename.str().empty()) {
