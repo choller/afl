@@ -99,7 +99,6 @@ static u8  skip_deterministic,        /* Skip deterministic stages?       */
            bitmap_changed = 1,        /* Time to update bitmap?           */
            qemu_mode,                 /* Running in QEMU mode?            */
            skip_requested,            /* Skip request, via SIGUSR1        */
-           rand_input_files,          /* Randomize the order of testcases */
            run_over10m;               /* Run time over 10 minutes?        */
 
 static s32 out_fd,                    /* Persistent fd for out_file       */
@@ -1249,7 +1248,6 @@ static void read_testcases(void) {
   s32 nl_cnt;
   u32 i;
   u8* fn;
-  u32* rand_idx = NULL;
 
   /* Auto-detect non-in-place resumption attempts. */
 
@@ -1278,34 +1276,17 @@ static void read_testcases(void) {
 
   }
 
-  if (rand_input_files) {
-    /* Create an array with all possibles indices */
-    rand_idx = malloc(nl_cnt * sizeof(u32));
-    for (i = 0; i < nl_cnt; ++i)
-      rand_idx[i] = i;
-
-    /* Shuffle the array */
-    for (i = 0; i < nl_cnt; ++i) {
-      u32 j = UR(nl_cnt);
-      u32 temp = rand_idx[i];
-      rand_idx[i] = rand_idx[j];
-      rand_idx[j] = temp;
-    }
-  }
-
   for (i = 0; i < nl_cnt; i++) {
 
     struct stat st;
 
-    u32 idx = rand_input_files ? rand_idx[i] : i;
-
-    u8* fn = alloc_printf("%s/%s", in_dir, nl[idx]->d_name);
-    u8* dfn = alloc_printf("%s/.state/deterministic_done/%s", in_dir, nl[idx]->d_name);
+    u8* fn = alloc_printf("%s/%s", in_dir, nl[i]->d_name);
+    u8* dfn = alloc_printf("%s/.state/deterministic_done/%s", in_dir, nl[i]->d_name);
 
     u8  passed_det = 0;
 
-    free(nl[idx]); /* not tracked */
-
+    free(nl[i]); /* not tracked */
+ 
     if (lstat(fn, &st) || access(fn, R_OK))
       PFATAL("Unable to access '%s'", fn);
 
@@ -7391,7 +7372,7 @@ int main(int argc, char** argv) {
 
   doc_path = access(DOC_PATH, F_OK) ? "docs" : DOC_PATH;
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:QsR")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:Qs")) > 0)
 
     switch (opt) {
 
@@ -7538,12 +7519,6 @@ int main(int argc, char** argv) {
         qemu_mode = 1;
 
         if (!mem_limit_given) mem_limit = MEM_LIMIT_QEMU;
-
-        break;
-
-      case 'R':
-
-        rand_input_files = 1;
 
         break;
 
