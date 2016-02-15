@@ -264,7 +264,8 @@ enum {
   /* 13 */ STAGE_EXTRAS_UI,
   /* 14 */ STAGE_EXTRAS_AO,
   /* 15 */ STAGE_HAVOC,
-  /* 16 */ STAGE_SPLICE
+  /* 16 */ STAGE_SPLICE,
+  /* 17 */ STAGE_PYTHON
 };
 
 /* Stage value types */
@@ -352,6 +353,133 @@ static void shuffle_ptrs(void** ptrs, u32 cnt) {
   }
 
 }
+
+#ifdef USE_PYTHON
+#include <Python.h>
+
+static PyObject *py_module;
+
+enum {
+  /* 00 */ PY_FUNC_INIT,
+  /* 01 */ PY_FUNC_FUZZ,
+  PY_FUNC_COUNT
+};
+
+static PyObject *py_functions[PY_FUNC_COUNT];
+
+static int init_py() {
+  Py_Initialize();
+  u8* module_name = getenv("AFL_PYTHON_MODULE");
+
+  if (module_name) {
+    PyObject* py_name = PyString_FromString(module_name);
+
+    py_module = PyImport_Import(py_name);
+    Py_DECREF(py_name);
+
+    if (py_module != NULL) {
+      py_functions[PY_FUNC_INIT] = PyObject_GetAttrString(py_module, "init");
+      py_functions[PY_FUNC_FUZZ] = PyObject_GetAttrString(py_module, "fuzz");
+
+      if (py_functions[PY_FUNC_INIT] && PyCallable_Check(py_functions[PY_FUNC_INIT])) {
+        PyObject *py_args, *py_value;
+
+        /* Provide the init function a seed for the Python RNG */
+        py_args = PyTuple_New(1);
+        py_value = PyInt_FromLong(UR(0xFFFFFFFF));
+        if (!py_value) {
+          Py_DECREF(py_args);
+          fprintf(stderr, "Cannot convert argument\n");
+          return 1;
+        }
+
+        PyTuple_SetItem(py_args, 0, py_value);
+
+        py_value = PyObject_CallObject(py_functions[PY_FUNC_INIT], py_args);
+
+        Py_DECREF(py_args);
+
+        if (py_value == NULL) {
+          PyErr_Print();
+          fprintf(stderr,"Call failed\n");
+          return 1;
+        }
+      } else {
+        if (PyErr_Occurred())
+          PyErr_Print();
+        fprintf(stderr, "Cannot find 'init' function in external Python module");
+        return 1;
+      }
+
+      if (!py_functions[PY_FUNC_FUZZ] || !PyCallable_Check(py_functions[PY_FUNC_FUZZ])) {
+        if (PyErr_Occurred())
+          PyErr_Print();
+        fprintf(stderr, "Cannot find 'fuzz' function in external Python module");
+        return 1;
+      }
+    } else {
+      PyErr_Print();
+      fprintf(stderr, "Failed to load \"%s\"\n", module_name);
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
+static void finalize_py() {
+  if (py_module != NULL) {
+    u32 i;
+    for (i = 0; i < PY_FUNC_COUNT; ++i)
+      Py_XDECREF(py_functions[i]);
+
+    Py_DECREF(py_module);
+  }
+
+  Py_Finalize();
+}
+
+static void fuzz_py(char* buf, size_t buflen, char* add_buf, size_t add_buflen, char** ret, size_t* retlen) {
+  PyObject *py_args, *py_value;
+
+  if (py_module != NULL) {
+    py_args = PyTuple_New(2);
+    py_value = PyByteArray_FromStringAndSize(buf, buflen);
+    if (!py_value) {
+      Py_DECREF(py_args);
+      fprintf(stderr, "Cannot convert argument\n");
+      return;
+    }
+
+    PyTuple_SetItem(py_args, 0, py_value);
+
+    py_value = PyByteArray_FromStringAndSize(add_buf, add_buflen);
+    if (!py_value) {
+      Py_DECREF(py_args);
+      fprintf(stderr, "Cannot convert argument\n");
+      return;
+    }
+
+    PyTuple_SetItem(py_args, 1, py_value);
+
+    py_value = PyObject_CallObject(py_functions[PY_FUNC_FUZZ], py_args);
+
+    Py_DECREF(py_args);
+
+    if (py_value != NULL) {
+      *retlen = PyByteArray_Size(py_value);
+      *ret = malloc(*retlen);
+      memcpy(*ret, PyByteArray_AsString(py_value), *retlen);
+      Py_DECREF(py_value);
+    } else {
+      PyErr_Print();
+      fprintf(stderr,"Call failed\n");
+      return;
+    }
+  }
+}
+
+#endif /* USE_PYTHON */
 
 
 #ifndef IGNORE_FINDS
@@ -4014,9 +4142,10 @@ static void show_stats(void) {
        "  imported : " cNOR "%-10s " bSTG bV "\n", tmp,
        sync_id ? DI(queued_imported) : (u8*)"n/a");
 
-  sprintf(tmp, "%s/%s, %s/%s",
+  sprintf(tmp, "%s/%s, %s/%s, %s/%s",
           DI(stage_finds[STAGE_HAVOC]), DI(stage_cycles[STAGE_HAVOC]),
-          DI(stage_finds[STAGE_SPLICE]), DI(stage_cycles[STAGE_SPLICE]));
+          DI(stage_finds[STAGE_SPLICE]), DI(stage_cycles[STAGE_SPLICE]),
+          DI(stage_finds[STAGE_PYTHON]), DI(stage_cycles[STAGE_PYTHON]));
 
   SAYF(bV bSTOP "       havoc : " cNOR "%-37s " bSTG bV bSTOP 
        "  variable : %s%-10s " bSTG bV "\n", tmp, queued_variable ? cLRD : cNOR,
@@ -4810,7 +4939,11 @@ static u8 fuzz_one(char** argv) {
      testing in earlier, resumed runs (passed_det). */
 
   if (skip_deterministic || queue_cur->was_fuzzed || queue_cur->passed_det)
+#ifdef USE_PYTHON
+    goto python_stage;
+#else
     goto havoc_stage;
+#endif
 
   /*********************************************
    * SIMPLE BITFLIP (+dictionary construction) *
@@ -4918,7 +5051,12 @@ static u8 fuzz_one(char** argv) {
   stage_finds[STAGE_FLIP1]  += new_hit_cnt - orig_hit_cnt;
   stage_cycles[STAGE_FLIP1] += stage_max;
 
-  if (queue_cur->passed_det) goto havoc_stage;
+  if (queue_cur->passed_det)
+#ifdef USE_PYTHON
+    goto python_stage;
+#else
+    goto havoc_stage;
+#endif
 
   /* Two walking bits. */
 
@@ -5761,6 +5899,90 @@ skip_extras:
      in the .state/ directory. */
 
   if (!queue_cur->passed_det) mark_as_det_done(queue_cur);
+
+#ifdef USE_PYTHON
+python_stage:
+  /**********************************
+   * EXTERNAL MUTATORS (Python API) *
+   **********************************/
+
+  if (!py_module) goto havoc_stage;
+
+  stage_name  = "python";
+  stage_short = "python";
+  stage_max   = HAVOC_CYCLES * perf_score / havoc_div / 100;
+
+  if (stage_max < HAVOC_MIN) stage_max = HAVOC_MIN;
+
+  orig_hit_cnt = queued_paths + unique_crashes;
+
+  char* retbuf = NULL;
+  size_t retlen = 0;
+
+  for (stage_cur = 0; stage_cur < stage_max; stage_cur++) {
+    struct queue_entry* target;
+    u32 tid;
+    u8* new_buf;
+
+retry_external_pick:
+    /* Pick a random other queue entry for passing to external API */
+    do { tid = UR(queued_paths); } while (tid == current_entry);
+
+    target = queue;
+
+    while (tid >= 100) { target = target->next_100; tid -= 100; }
+    while (tid--) target = target->next;
+
+    /* Make sure that the target has a reasonable length. */
+
+    while (target && (target->len < 2 || target == queue_cur)) {
+      target = target->next;
+      splicing_with++;
+    }
+
+    if (!target) goto retry_external_pick;
+
+    /* Read the additional testcase into a new buffer. */
+    fd = open(target->fname, O_RDONLY);
+    if (fd < 0) PFATAL("Unable to open '%s'", target->fname);
+    new_buf = ck_alloc_nozero(target->len);
+    ck_read(fd, new_buf, target->len, target->fname);
+    close(fd);
+
+    fuzz_py(out_buf, len, new_buf, target->len, &retbuf, &retlen);
+
+    ck_free(new_buf);
+
+    if (retbuf) {
+      if (common_fuzz_stuff(argv, retbuf, retlen)) {
+        free(retbuf);
+        goto abandon_entry;
+      }
+
+      /* Reset retbuf/retlen */
+      free(retbuf);
+      retbuf = NULL;
+      retlen = 0;
+
+      /* If we're finding new stuff, let's run for a bit longer, limits
+         permitting. */
+
+      if (queued_paths != havoc_queued) {
+        if (perf_score <= HAVOC_MAX_MULT * 100) {
+          stage_max  *= 2;
+          perf_score *= 2;
+        }
+
+        havoc_queued = queued_paths;
+      }
+    }
+  }
+
+  new_hit_cnt = queued_paths + unique_crashes;
+
+  stage_finds[STAGE_PYTHON]  += new_hit_cnt - orig_hit_cnt;
+  stage_cycles[STAGE_PYTHON] += stage_max;
+#endif
 
   /****************
    * RANDOM HAVOC *
@@ -7593,6 +7815,12 @@ int main(int argc, char** argv) {
   setup_shm();
 
   setup_dirs_fds();
+
+#ifdef USE_PYTHON
+  if (init_py())
+    FATAL("Failed to initialize Python module");
+#endif
+
   setup_cmdline_file(argv + optind);
   read_testcases();
   load_auto();
@@ -7724,6 +7952,10 @@ stop_fuzzing:
   alloc_report();
 
   OKF("We're done here. Have a nice day!\n");
+
+#ifdef USE_PYTHON
+  finalize_py();
+#endif
 
   exit(0);
 
