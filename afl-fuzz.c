@@ -2023,8 +2023,8 @@ static void init_forkserver(char** argv) {
     setsid();
 
     if (!getenv("AFL_DEBUG_CHILD_OUTPUT")) {
-    	dup2(dev_null_fd, 1);
-    	dup2(dev_null_fd, 2);
+        dup2(dev_null_fd, 1);
+        dup2(dev_null_fd, 2);
     }
 
     if (out_file) {
