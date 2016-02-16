@@ -4,7 +4,7 @@ american fuzzy lop
 
   Written and maintained by Michal Zalewski <lcamtuf@google.com>
 
-  Copyright 2013, 2014, 2015 Google Inc. All rights reserved.
+  Copyright 2013, 2014, 2015, 2016 Google Inc. All rights reserved.
   Released under terms and conditions of Apache License, Version 2.0.
 
   For new versions and additional information, check out:
@@ -324,6 +324,13 @@ the file simpler without altering the execution path.
 
 The minimizer accepts the -m, -t, -f and @@ syntax in a manner compatible with
 afl-fuzz.
+
+Another recent addition to AFL is the afl-analyze tool. It takes an input
+file, attempts to sequentially flip bytes, and observes the behavior of the
+tested program. It then color-codes the input based on which sections appear to
+be critical, and which are not; while not bulletproof, it can often offer quick
+insights into complex file formats. More info about its operation can be found
+near the end of technical_details.txt.
 
 11) Common-sense risks
 ----------------------
