@@ -1,0 +1,69 @@
+==================================================
+Adding custom mutators to AFL using Python modules
+==================================================
+
+  This file describes how you can utilize the external Python API to write
+  your own custom mutation routines.
+
+  Note: This feature is highly experimental. Use at your own risk.
+
+  Implemented by Christian Holler (:decoder) <choller@mozilla.com>.
+
+
+1) Description and purpose
+--------------------------
+
+While AFLFuzz comes with a good selection of generic deterministic and
+non-deterministic mutation operations, it sometimes might make sense to extend
+these to implement strategies more specific to the target you are fuzzing.
+
+For simplicity and in order to allow people without C knowledge to extend
+AFLFuzz, I implemented a "Python" stage that can make use of an external
+module (written in Python) that implements a custom mutation stage.
+
+The main motivation behind this is to lower the barrier for people
+experimenting with this tool. Hopefully, someone will be able to do useful
+things with this extension.
+
+If you find it useful, have questions or need additional features added to the
+interface, feel free to send a mail to <choller@mozilla.com>.
+
+2) How the Python module looks like
+-----------------------------------
+
+You can find a simple example in pymodules/example.py including documentation
+explaining each function. In the same directory, you can find another simple
+module that performs simple mutations.
+
+Right now, "init" is called at program startup and can be used to perform any
+kinds of one-time initializations while "fuzz" is called each time a mutation
+is requested.
+
+3) How to compile AFLFuzz with Python support
+---------------------------------------------
+
+A prerequisite for using this mode is to compile AFLFuzz with Python support.
+
+This requires passing -DUSE_PYTHON to the compiler as well as the appropriate
+include and linker flags. The following command should work for Python 2.7:
+
+$ CFLAGS="-DUSE_PYTHON -I/usr/include/python2.7" LDFLAGS="-lpython2.7" make
+
+4) How to run AFLFuzz with your custom module
+---------------------------------------------
+
+You must pass the module name inside the env variable AFL_PYTHON_MODULE.
+
+In addition, if you are trying to load the module from the local directory,
+you must adjust your PYTHONPATH to reflect this circumstance. The following
+command should work if you are inside the aflfuzz directory:
+
+$ AFL_PYTHON_MODULE="pymodules.test" PYTHONPATH=. ./afl-fuzz
+
+5) Order and statistics
+-----------------------
+
+The Python stage is set to be the first non-deterministic stage (right before
+the havoc stage). In the statistics however, it shows up as the third number
+under "havoc". That's because I'm lazy and I didn't want to mess with the UI
+too much ;)
