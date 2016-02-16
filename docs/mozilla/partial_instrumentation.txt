@@ -1,0 +1,77 @@
+==========================================
+Using AFLFuzz with partial instrumentation
+==========================================
+
+  This file describes how you can selectively instrument only the source files
+  that are interesting to you using the LLVM instrumentation provided by
+  AFLFuzz.
+
+  Note: This feature is experimental. Use at your own risk.
+
+  Implemented by Christian Holler (:decoder) <choller@mozilla.com>.
+
+
+1) Description and purpose
+--------------------------
+
+When building and testing complex programs where only a part of the program is
+the fuzzing target, it often helps to only instrument the necessary parts of
+the program, leaving the rest uninstrumented. This helps to focus the fuzzer
+on the important parts of the program, avoiding undesired noise and
+disturbance by uninteresting code being exercised.
+
+For this purpose, I have added a "partial instrumentation" support to the LLVM
+mode of AFLFuzz that allows you to specify on a source file level which files
+should be compiled with or without instrumentation.
+
+2) Building the LLVM module
+---------------------------
+
+The new code is part of the existing AFLFuzz LLVM module in the llvm_mode/
+subdirectory. Follow the installation instructions in this directory. However,
+be aware that the changes to the module require you to explicitly specify the
+LLVM version you are using, except if you are using LLVM 3.7.
+
+At the time of this writing, LLVM 3.7 lacks ASan support at least under Ubuntu
+so I recommend using LLVM 3.6 instead. To compile the module with LLVM 3.6,
+use the following command:
+
+$ LLVM_CONFIG=llvm-config-3.6 CXXFLAGS="-DLLVM36" make
+
+Afterwards, make sure you run `make install` in the toplevel directory to
+install the updated module.
+
+3) How to use the partial instrumentation mode
+----------------------------------------------
+
+In order to build with partial instrumentation, you need to build with
+afl-clang-fast and afl-clang-fast++ respectively. The only required change is
+that you need to set the environment variable AFL_INST_WHITELIST when calling
+the compiler.
+
+The environment variable must point to a file containing all the filenames
+that should be instrumented. For matching, the filename that is being compiled
+must end in the filename contained in this whitelist (to avoid breaking the
+matching when absolute paths are used during compilation).
+
+For example if your source tree looks like this:
+
+project/
+project/feature_a/a1.cpp
+project/feature_a/a2.cpp
+project/feature_b/b1.cpp
+project/feature_b/b2.cpp
+
+And you only want to test feature_a, then create a whitelist file containing:
+
+feature_a/a1.cpp
+feature_a/a2.cpp
+
+and point AFL_INST_WHITELIST when you compile your program. For each file that
+didn't match the whitelist, the compiler will issue a warning at the end
+stating that no blocks were instrumented. If you didn't intend to instrument
+that file, then you can safely ignore that warning.
+
+Please be aware that this feature relies on the program being compiled with
+debug information (-g), otherwise matching basic block locations to source
+code files will fail.
