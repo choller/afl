@@ -105,7 +105,7 @@ bool AFLCoverage::runOnModule(Module &M) {
 
   char be_quiet = 0;
 
-  if (isatty(2) && !getenv("AFL_QUIET")) {
+  if (getenv("AFL_CC_VERBOSE") || (isatty(2) && !getenv("AFL_QUIET"))) {
 
     SAYF(cCYA "afl-llvm-pass " cBRI VERSION cRST " by <lszekeres@google.com>\n");
 
