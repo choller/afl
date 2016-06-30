@@ -60,7 +60,8 @@
 #  include <sys/sysctl.h>
 #endif /* __APPLE__ || __FreeBSD__ || __OpenBSD__ */
 
-/* For supporting -Z on systems that have sched_setaffinity. */
+/* For systems that have sched_setaffinity; right now just Linux, but one
+   can hope... */
 
 #ifdef __linux__
 #  define HAVE_AFFINITY 1
@@ -200,14 +201,11 @@ static u64 total_cal_us,              /* Total calibration time (us)      */
 static u64 total_bitmap_size,         /* Total bit count for all bitmaps  */
            total_bitmap_entries;      /* Number of bitmaps counted        */
 
-static u32 cpu_core_count;            /* CPU core count                   */
+static s32 cpu_core_count;            /* CPU core count                   */
 
 #ifdef HAVE_AFFINITY
 
-static u8  use_affinity;              /* Using -Z                         */
-
-static u32 cpu_aff_main,	      /* Affinity for main process        */
-           cpu_aff_child;             /* Affinity for fuzzed child        */
+static s32 cpu_aff = -1;       	      /* Selected CPU core                */
 
 #endif /* HAVE_AFFINITY */
 
@@ -339,25 +337,6 @@ static u64 get_cur_time_us(void) {
   return (tv.tv_sec * 1000000ULL) + tv.tv_usec;
 
 }
-
-
-#ifdef HAVE_AFFINITY
-
-/* Set CPU affinity (on systems that support it). */
-
-static void set_cpu_affinity(u32 cpu_id) {
-
-  cpu_set_t c;
-
-  CPU_ZERO(&c);
-  CPU_SET(cpu_id, &c);
-
-  if (sched_setaffinity(0, sizeof(c), &c))
-    PFATAL("sched_setaffinity failed");
-
-}
-
-#endif /* HAVE_AFFINITY */
 
 
 /* Generate a random number (from 0 to limit - 1). This may
@@ -525,6 +504,122 @@ static void fuzz_py(char* buf, size_t buflen, char* add_buf, size_t add_buflen, 
 
 #endif /* USE_PYTHON */
 
+
+#ifdef HAVE_AFFINITY
+
+/* Build a list of processes bound to specific cores. Returns -1 if nothing
+   can be found. Assumes an upper bound of 4k CPUs. */
+
+static void bind_to_free_cpu(void) {
+
+  DIR* d;
+  struct dirent* de;
+  cpu_set_t c;
+
+  u8 cpu_used[4096] = { 0 };
+  u32 i;
+
+  if (!cpu_core_count) return;
+
+  if (getenv("AFL_NO_AFFINITY")) {
+
+    WARNF("Not binding to a CPU core (AFL_NO_AFFINITY set).");
+    return;
+
+  }
+
+  d = opendir("/proc");
+
+  if (!d) {
+
+    WARNF("Unable to access /proc - can't scan for free CPU cores.");
+    return;
+
+  }
+
+  ACTF("Checking CPU core loadout...");
+
+  /* Introduce some jitter, in case multiple AFL tasks are doing the same
+     thing at the same time... */
+
+  usleep(R(1000) * 250);
+
+  /* Scan all /proc/<pid>/status entries, checking for Cpus_allowed_list.
+     Flag all processes bound to a specific CPU using cpu_used[]. This will
+     fail for some exotic binding setups, but is likely good enough in almost
+     all real-world use cases. */
+
+  while ((de = readdir(d))) {
+
+    u8* fn;
+    FILE* f;
+    u8 tmp[MAX_LINE];
+    u8 has_vmsize = 0;
+
+    if (!isdigit(de->d_name[0])) continue;
+
+    fn = alloc_printf("/proc/%s/status", de->d_name);
+
+    if (!(f = fopen(fn, "r"))) {
+      ck_free(fn);
+      continue;
+    }
+
+    while (fgets(tmp, MAX_LINE, f)) {
+
+      u32 hval;
+
+      /* Processes without VmSize are probably kernel tasks. */
+
+      if (!strncmp(tmp, "VmSize:\t", 8)) has_vmsize = 1;
+
+      if (!strncmp(tmp, "Cpus_allowed_list:\t", 19) &&
+          !strchr(tmp, '-') && !strchr(tmp, ',') &&
+          sscanf(tmp + 19, "%u", &hval) == 1 && hval < sizeof(cpu_used) &&
+          has_vmsize) {
+
+        cpu_used[hval] = 1;
+        break;
+
+      }
+
+    }
+
+    ck_free(fn);
+    fclose(f);
+
+  }
+
+  closedir(d);
+
+  for (i = 0; i < cpu_core_count; i++) if (!cpu_used[i]) break;
+
+  if (i == cpu_core_count) {
+
+    SAYF("\n" cLRD "[-] " cRST
+         "Uh-oh, looks like all %u CPU cores on your system are allocated to\n"
+         "    other instances of afl-fuzz (or similar CPU-locked tasks). Starting\n"
+         "    another fuzzer on this machine is probably a bad plan, but if you are\n"
+         "    absolutely sure, you can set AFL_NO_AFFINITY and try again.\n",
+         cpu_core_count);
+
+    FATAL("No more free CPU cores");
+
+  }
+
+  OKF("Found a free CPU core, binding to #%u.", i);
+
+  cpu_aff = i;
+
+  CPU_ZERO(&c);
+  CPU_SET(i, &c);
+
+  if (sched_setaffinity(0, sizeof(c), &c))
+    PFATAL("sched_setaffinity failed");
+
+}
+
+#endif /* HAVE_AFFINITY */
 
 #ifndef IGNORE_FINDS
 
@@ -2025,10 +2120,6 @@ EXP_ST void init_forkserver(char** argv) {
 
     struct rlimit r;
 
-#ifdef HAVE_AFFINITY
-    if (use_affinity) set_cpu_affinity(cpu_aff_child);
-#endif /* HAVE_AFFINITY */
-
     /* Umpf. On OpenBSD, the default fd limit for root users is set to
        soft 128. Let's try to fix that... */
 
@@ -2328,10 +2419,6 @@ static u8 run_target(char** argv) {
     if (!child_pid) {
 
       struct rlimit r;
-
-#ifdef HAVE_AFFINITY
-      if (use_affinity) set_cpu_affinity(cpu_aff_child);
-#endif /* HAVE_AFFINITY */
 
       if (mem_limit) {
 
@@ -4265,8 +4352,27 @@ static void show_stats(void) {
 
     if (!no_cpu_meter_red && cur_utilization >= 150) cpu_color = cLRD;
 
+#ifdef HAVE_AFFINITY
+
+    if (cpu_aff >= 0) {
+
+      SAYF(SP10 cGRA "[cpu%03u:%s%3u%%" cGRA "]\r" cRST, 
+           MIN(cpu_aff, 999), cpu_color,
+           MIN(cur_utilization, 999));
+
+    } else {
+
+      SAYF(SP10 cGRA "   [cpu:%s%3u%%" cGRA "]\r" cRST,
+           cpu_color, MIN(cur_utilization, 999));
+ 
+   }
+
+#else
+
     SAYF(SP10 cGRA "   [cpu:%s%3u%%" cGRA "]\r" cRST,
-         cpu_color, cur_utilization < 999 ? cur_utilization : 999);
+         cpu_color, MIN(cur_utilization, 999));
+
+#endif /* ^HAVE_AFFINITY */
 
   } else SAYF("\r");
 
@@ -5876,6 +5982,11 @@ skip_interest:
 
     for (j = 0; j < extras_cnt; j++) {
 
+      if (len + extras[j].len > MAX_FILE) {
+        stage_max--; 
+        continue;
+      }
+
       /* Insert token */
       memcpy(ex_tmp + i, extras[j].data, extras[j].len);
 
@@ -7042,9 +7153,6 @@ static void usage(u8* argv0) {
 
        "  -T text       - text banner to show on the screen\n"
        "  -M / -S id    - distributed mode (see parallel_fuzzing.txt)\n"
-#ifdef HAVE_AFFINITY
-       "  -Z core_id    - set CPU affinity (see perf_tips.txt)\n"
-#endif /* HAVE_AFFINITY */
        "  -C            - crash exploration mode (the peruvian rabbit thing)\n\n"
 
        "For additional tips, please consult %s/README.\n\n",
@@ -7261,9 +7369,9 @@ static void check_crash_handling(void) {
 
     SAYF("\n" cLRD "[-] " cRST
          "Hmm, your system is configured to send core dump notifications to an\n"
-         "    external utility. This will cause issues due to an extended delay\n"
-         "    between the fuzzed binary malfunctioning and this information being\n"
-         "    eventually relayed to the fuzzer via the standard waitpid() API.\n\n"
+         "    external utility. This will cause issues: there will be an extended delay\n"
+         "    between stumbling upon a crash and having this information relayed to the\n"
+         "    fuzzer via the standard waitpid() API.\n\n"
 
          "    To avoid having crashes misinterpreted as hangs, please log in as root\n" 
          "    and temporarily modify /proc/sys/kernel/core_pattern, like so:\n\n"
@@ -7365,8 +7473,11 @@ static void get_core_count(void) {
 
 #else
 
-  /* On Linux, a simple way is to look at /proc/stat, especially since we'd
-     be parsing it anyway for other reasons later on. */
+#ifdef HAVE_AFFINITY
+
+  cpu_core_count = sysconf(_SC_NPROCESSORS_ONLN);
+
+#else
 
   FILE* f = fopen("/proc/stat", "r");
   u8 tmp[1024];
@@ -7377,10 +7488,12 @@ static void get_core_count(void) {
     if (!strncmp(tmp, "cpu", 3) && isdigit(tmp[3])) cpu_core_count++;
 
   fclose(f);
-  
+
+#endif /* ^HAVE_AFFINITY */
+
 #endif /* ^(__APPLE__ || __FreeBSD__ || __OpenBSD__) */
 
-  if (cpu_core_count) {
+  if (cpu_core_count > 0) {
 
     cur_runnable = (u32)get_runnable_processes();
 
@@ -7409,15 +7522,12 @@ static void get_core_count(void) {
 
     }
 
-  } else WARNF("Unable to figure out the number of CPU cores.");
+  } else {
 
-#ifdef HAVE_AFFINITY
+    cpu_core_count = 0;
+    WARNF("Unable to figure out the number of CPU cores.");
 
-  if (use_affinity)
-    OKF("Using specified CPU affinity: main = %u, child = %u",
-        cpu_aff_main, cpu_aff_child);
-
-#endif /* HAVE_AFFINITY */
+  }
 
 }
 
@@ -7710,7 +7820,7 @@ int main(int argc, char** argv) {
 
   doc_path = access(DOC_PATH, F_OK) ? "docs" : DOC_PATH;
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:QZ:")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:Q")) > 0)
 
     switch (opt) {
 
@@ -7806,35 +7916,6 @@ int main(int argc, char** argv) {
 
         break;
 
-#ifdef HAVE_AFFINITY
-
-      case 'Z': {
-
-          s32 i;
-
-          if (use_affinity) FATAL("Multiple -Z options not supported");
-          use_affinity = 1;
-
-          cpu_core_count = sysconf(_SC_NPROCESSORS_ONLN);
-
-          i = sscanf(optarg, "%u,%u", &cpu_aff_main, &cpu_aff_child);
-
-          if (i < 1 || cpu_aff_main >= cpu_core_count) 
-            FATAL("Bogus primary core ID passed to -Z (expected 0-%u)",
-                  cpu_core_count - 1);
-
-          if (i == 1) cpu_aff_child = cpu_aff_main;
-
-          if (cpu_aff_child >= cpu_core_count)
-            FATAL("Bogus secondary core ID passed to -Z (expected 0-%u)",
-                  cpu_core_count - 1);
-
-          break;
-
-        }
-
-#endif /* HAVE_AFFINITY */
-
       case 'd':
 
         if (skip_deterministic) FATAL("Multiple -d options not supported");
@@ -7900,10 +7981,6 @@ int main(int argc, char** argv) {
   setup_signal_handlers();
   check_asan_opts();
 
-#ifdef HAVE_AFFINITY
-  if (use_affinity) set_cpu_affinity(cpu_aff_main);
-#endif /* HAVE_AFFINITY */
-
   if (sync_id) fix_up_sync();
 
   if (!strcmp(in_dir, out_dir))
@@ -7934,6 +8011,11 @@ int main(int argc, char** argv) {
   check_if_tty();
 
   get_core_count();
+
+#ifdef HAVE_AFFINITY
+  bind_to_free_cpu();
+#endif /* HAVE_AFFINITY */
+
   check_crash_handling();
   check_cpu_governor();
 

@@ -6,9 +6,9 @@ Sister projects
   designed for, or meant to integrate with AFL. See README for the general
   instruction manual.
 
-----------------------------
-Support for other languages:
-----------------------------
+-------------------------------------------
+Support for other languages / environments:
+-------------------------------------------
 
 Python AFL (Jakub Wilk)
 -----------------------
@@ -31,6 +31,14 @@ afl.rs (Keegan McAllister)
   Allows Rust features to be easily fuzzed with AFL (using the LLVM mode).
 
   https://github.com/kmcallister/afl.rs
+
+OCaml support (KC Sivaramakrishnan)
+-----------------------------------
+
+  Adds AFL-compatible instrumentation to OCaml programs.
+
+  https://github.com/ocamllabs/opam-repo-dev/pull/23
+  http://canopy.mirage.io/Posts/Fuzzing
 
 AFL for GCJ Java and other GCC frontends (-)
 --------------------------------------------
@@ -61,6 +69,14 @@ AFL fixup shim (Ben Nagy)
   that don't have C / .so bindings. Includes examples in Go.
 
   https://github.com/bnagy/aflfix
+
+TriforceAFL (Tim Newsham and Jesse Hertz)
+-----------------------------------------
+
+  Leverages QEMU full system emulation mode to allow AFL to target operating
+  systems and other alien worlds:
+
+  https://www.nccgroup.trust/us/about-us/newsroom-and-events/blog/2016/june/project-triforce-run-afl-on-everything/
 
 ----------------
 Network fuzzing:
@@ -125,9 +141,9 @@ afl-sid (Jacek Wielemborek)
 
   https://github.com/d33tah/afl-sid
 
--------------------------------------
-Crash triage, coverage analysis, etc:
--------------------------------------
+-----------------------------------------------------------
+Crash triage, coverage analysis, and other companion tools:
+-----------------------------------------------------------
 
 afl-crash-analyzer (Tobias Ospelt)
 ----------------------------------
@@ -163,6 +179,14 @@ aflize (Jacek Wielemborek)
   Automatically build AFL-enabled versions of Debian packages.
 
   https://github.com/d33tah/aflize
+
+afl-ddmin-mod (Markus Teufelberger)
+-----------------------------------
+
+  A variant of afl-tmin that uses a more sophisticated (but slower)
+  minimization algorithm.
+
+  https://github.com/MarkusTeufelberger/afl-ddmin-mod
 
 -------------------------------
 Narrow-purpose or experimental:
@@ -257,3 +281,4 @@ Kernel fuzzing (Dmitry Vyukov)
 
   https://github.com/google/syzkaller/wiki/Found-Bugs
   https://github.com/dvyukov/linux/commit/33787098ffaaa83b8a7ccf519913ac5fd6125931
+  http://events.linuxfoundation.org/sites/events/files/slides/AFL%20filesystem%20fuzzing%2C%20Vault%202016_0.pdf
