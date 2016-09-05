@@ -2532,7 +2532,7 @@ static u8 run_target(char** argv) {
 
   }
 
-  if (!WIFSTOPPED(&status)) child_pid = 0;
+  if (!WIFSTOPPED(status)) child_pid = 0;
 
   it.it_value.tv_sec = 0;
   it.it_value.tv_usec = 0;
@@ -4040,7 +4040,7 @@ static void show_stats(void) {
 
   /* Honor AFL_EXIT_WHEN_DONE and AFL_BENCH_UNTIL_CRASH. */
 
-  if (!dumb_mode && cycles_wo_finds > 20 && !pending_not_fuzzed &&
+  if (!dumb_mode && cycles_wo_finds > 100 && !pending_not_fuzzed &&
       getenv("AFL_EXIT_WHEN_DONE")) stop_soon = 2;
 
   if (total_crashes && getenv("AFL_BENCH_UNTIL_CRASH")) stop_soon = 2;
@@ -4114,10 +4114,10 @@ static void show_stats(void) {
     if (queue_cycle == 1) strcpy(tmp, cMGN); else
 
     /* Subsequent cycles, but we're still making finds. */
-    if (cycles_wo_finds < 3) strcpy(tmp, cYEL); else
+    if (cycles_wo_finds < 25) strcpy(tmp, cYEL); else
 
     /* No finds for a long time and no test cases to try. */
-    if (cycles_wo_finds > 20 && !pending_not_fuzzed) strcpy(tmp, cLGN);
+    if (cycles_wo_finds > 100 && !pending_not_fuzzed) strcpy(tmp, cLGN);
 
     /* Default: cautiously OK to stop? */
     else strcpy(tmp, cLBL);
@@ -4804,9 +4804,9 @@ static u32 calculate_score(struct queue_entry* q) {
 
     case 0 ... 3:   break;
     case 4 ... 7:   perf_score *= 2; break;
-    case 8 ... 13:  perf_score *= 4; break;
-    case 14 ... 25: perf_score *= 6; break;
-    default:        perf_score *= 8;
+    case 8 ... 13:  perf_score *= 3; break;
+    case 14 ... 25: perf_score *= 4; break;
+    default:        perf_score *= 5;
 
   }
 
@@ -5016,7 +5016,7 @@ static u8 fuzz_one(char** argv) {
   u64 havoc_queued,  orig_hit_cnt, new_hit_cnt;
   u32 splice_cycle = 0, perf_score = 100, orig_perf, prev_cksum, eff_cnt = 1;
 
-  u8  ret_val = 1;
+  u8  ret_val = 1, doing_det = 0;
 
   u8  a_collect[MAX_AUTO_EXTRA];
   u32 a_len = 0;
@@ -5157,7 +5157,13 @@ static u8 fuzz_one(char** argv) {
      for this master instance. */
 
   if (master_max && (queue_cur->exec_cksum % master_max) != master_id - 1)
+#ifdef USE_PYTHON
+    goto python_stage;
+#else
     goto havoc_stage;
+#endif
+
+  doing_det = 1;
 
   /*********************************************
    * SIMPLE BITFLIP (+dictionary construction) *
@@ -6218,7 +6224,8 @@ havoc_stage:
 
     stage_name  = "havoc";
     stage_short = "havoc";
-    stage_max   = HAVOC_CYCLES * perf_score / havoc_div / 100;
+    stage_max   = (doing_det ? HAVOC_CYCLES_INIT : HAVOC_CYCLES) *
+                  perf_score / havoc_div / 100;
 
   } else {
 
