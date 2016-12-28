@@ -6151,7 +6151,7 @@ python_stage:
 
 retry_external_pick:
     /* Pick a random other queue entry for passing to external API */
-    do { tid = UR(queued_paths); } while (tid == current_entry);
+    do { tid = UR(queued_paths); } while (tid == current_entry && queued_paths > 1);
 
     target = queue;
 
@@ -6160,7 +6160,7 @@ retry_external_pick:
 
     /* Make sure that the target has a reasonable length. */
 
-    while (target && (target->len < 2 || target == queue_cur)) {
+    while (target && (target->len < 2 || target == queue_cur) && queued_paths > 1) {
       target = target->next;
       splicing_with++;
     }
