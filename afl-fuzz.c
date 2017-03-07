@@ -119,6 +119,9 @@ EXP_ST u8  skip_deterministic,        /* Skip deterministic stages?       */
            run_over10m,               /* Run time over 10 minutes?        */
            persistent_mode;           /* Running in persistent mode?      */
 
+EXP_ST u8  debug,                     /* Debug mode                       */
+           python_only;               /* Python-only mode                 */
+
 static s32 out_fd,                    /* Persistent fd for out_file       */
            dev_urandom_fd = -1,       /* Persistent fd for /dev/urandom   */
            dev_null_fd = -1,          /* Persistent fd for /dev/null      */
@@ -6210,6 +6213,12 @@ retry_external_pick:
 
   stage_finds[STAGE_PYTHON]  += new_hit_cnt - orig_hit_cnt;
   stage_cycles[STAGE_PYTHON] += stage_max;
+
+  if (python_only) {
+    /* Skip other stages */
+    ret_val = 0;
+    goto abandon_entry;
+  }
 #endif
 
   /****************
@@ -8103,6 +8112,17 @@ int main(int argc, char** argv) {
   fix_up_banner(argv[optind]);
 
   check_if_tty();
+
+  if (getenv("AFL_DEBUG"))
+    debug = 1;
+
+  if (getenv("AFL_PYTHON_ONLY")) {
+    /* This ensures we don't proceed to havoc/splice */
+    python_only = 1;
+
+    /* Ensure we also skip all deterministic steps */
+    skip_deterministic = 1;
+  }
 
   get_core_count();
 
