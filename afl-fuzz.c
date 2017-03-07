@@ -7614,8 +7614,6 @@ static void fix_up_sync(void) {
 
     if (force_deterministic)
       FATAL("use -S instead of -M -d");
-    else
-      FATAL("-S already implies -d");
 
   }
 
