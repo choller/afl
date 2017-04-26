@@ -120,6 +120,7 @@ EXP_ST u8  skip_deterministic,        /* Skip deterministic stages?       */
            persistent_mode;           /* Running in persistent mode?      */
 
 EXP_ST u8  debug,                     /* Debug mode                       */
+           cmin,                      /* cmin mode                        */
            python_only;               /* Python-only mode                 */
 
 static s32 out_fd,                    /* Persistent fd for out_file       */
@@ -2900,6 +2901,47 @@ static void check_map_coverage(void) {
 
 }
 
+/* Write coverage map in human readable format */
+static u32 write_coverage_cmin(u8* out_fn) {
+  s32 fd;
+  u32 i, ret = 0;
+
+  u8  cco = !!getenv("AFL_CMIN_CRASHES_ONLY"),
+      caa = !!getenv("AFL_CMIN_ALLOW_ANY"),
+      cbm = !!getenv("AFL_CMIN_BINARY_MODE");
+
+  unlink(out_file); /* Ignore errors */
+  fd = open(out_fn, O_WRONLY | O_CREAT | O_EXCL, 0600);
+  if (fd < 0) PFATAL("Unable to create '%s'", out_file);
+
+  if (cbm) {
+    for (i = 0; i < MAP_SIZE; i++)
+      if (trace_bits[i]) ret++;
+
+    ck_write(fd, trace_bits, MAP_SIZE, out_file);
+    close(fd);
+  } else {
+    FILE* f = fdopen(fd, "w");
+
+    if (!f) PFATAL("fdopen() failed");
+
+    for (i = 0; i < MAP_SIZE; i++) {
+      if (!trace_bits[i]) continue;
+      ret++;
+
+// TODO: Support cco / caa here
+//      if (child_timed_out) break;
+//      if (!caa && child_crashed != cco) break;
+
+      fprintf(f, "%u%u\n", trace_bits[i], i);
+    }
+
+    fclose(f);
+  }
+
+  return ret;
+}
+
 
 /* Perform dry run of all test cases to confirm that the app is working as
    expected. This is done only for the initial inputs, and only once. */
@@ -2942,6 +2984,12 @@ static void perform_dry_run(char** argv) {
     switch (res) {
 
       case FAULT_NONE:
+
+        if (cmin) {
+            u8* out_fn = alloc_printf("%s/.traces/%s", out_dir, q->fname);
+            write_coverage_cmin(out_fn);
+            ck_free(out_fn);
+        }
 
         if (q == queue) check_map_coverage();
 
@@ -8323,6 +8371,11 @@ int main(int argc, char** argv) {
     skip_deterministic = 1;
   }
 
+  if (getenv("AFL_CMIN")) {
+    /* This switches AFL into cmin mode, which writes only cmin traces */
+    cmin = 1;
+  }
+
   get_core_count();
 
 #ifdef HAVE_AFFINITY
@@ -8367,6 +8420,9 @@ int main(int argc, char** argv) {
     use_argv = argv + optind;
 
   perform_dry_run(use_argv);
+
+  if (cmin)
+    goto stop_cmin;
 
   cull_queue();
 
@@ -8467,6 +8523,8 @@ stop_fuzzing:
            "    (For info on resuming, see %s/README.)\n", doc_path);
 
   }
+
+stop_cmin:
 
   fclose(plot_file);
   destroy_queue();
