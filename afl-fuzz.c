@@ -8413,7 +8413,9 @@ int main(int argc, char** argv) {
     FATAL("Failed to initialize Python module");
 #endif
 
-  setup_cmdline_file(argv + optind);
+  if (!cmin)
+    setup_cmdline_file(argv + optind);
+
   read_testcases();
   load_auto();
 
