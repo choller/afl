@@ -8400,7 +8400,8 @@ int main(int argc, char** argv) {
   read_testcases();
   load_auto();
 
-  pivot_inputs();
+  if (!cmin)
+    pivot_inputs();
 
   if (extras_dir) load_extras(extras_dir);
 
