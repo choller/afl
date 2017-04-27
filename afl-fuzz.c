@@ -2991,6 +2991,7 @@ static void perform_dry_run(char** argv) {
         case FAULT_NONE:
         case FAULT_HANG:
         case FAULT_CRASH:
+        case FAULT_NOBITS:
           out_fn = alloc_printf("%s/.traces/%s", out_dir, fn);
           write_coverage_cmin(out_fn, res);
           ck_free(out_fn);
