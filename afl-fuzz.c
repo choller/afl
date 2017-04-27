@@ -8453,8 +8453,10 @@ int main(int argc, char** argv) {
   bind_to_free_cpu();
 #endif /* HAVE_AFFINITY */
 
-  check_crash_handling();
-  check_cpu_governor();
+  if (!cmin) {
+    check_crash_handling();
+    check_cpu_governor();
+  }
 
   setup_post();
   setup_shm();
