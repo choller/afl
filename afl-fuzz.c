@@ -8497,8 +8497,13 @@ int main(int argc, char** argv) {
 
   perform_dry_run(use_argv);
 
-  if (cmin)
+  if (cmin) {
+    /* Make sure we terminate our childs if they are still running */
+    if (child_pid > 0) kill(child_pid, SIGKILL);
+    if (forksrv_pid > 0) kill(forksrv_pid, SIGKILL);
+
     goto stop_cmin;
+  }
 
   cull_queue();
 
