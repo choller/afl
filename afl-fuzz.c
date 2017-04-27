@@ -121,6 +121,8 @@ EXP_ST u8  skip_deterministic,        /* Skip deterministic stages?       */
 
 EXP_ST u8  debug,                     /* Debug mode                       */
            cmin,                      /* cmin mode                        */
+           cmin_binary_mode,          /* Write binary maps                */
+           cmin_edges_only,           /* Use edge-coverage only           */
            python_only;               /* Python-only mode                 */
 
 static s32 out_fd,                    /* Persistent fd for out_file       */
@@ -1337,6 +1339,20 @@ static const u8 count_class_lookup8[256] = {
 
 };
 
+static const u8 count_class_human[256] = {
+
+  [0]           = 0,
+  [1]           = 1,
+  [2]           = 2,
+  [3]           = 3,
+  [4 ... 7]     = 4,
+  [8 ... 15]    = 5,
+  [16 ... 31]   = 6,
+  [32 ... 127]  = 7,
+  [128 ... 255] = 8
+
+};
+
 static u16 count_class_lookup16[65536];
 
 
@@ -1349,6 +1365,28 @@ static void init_count_class16(void) {
       count_class_lookup16[(b1 << 8) + b2] = 
         (count_class_lookup8[b1] << 8) |
         count_class_lookup8[b2];
+
+}
+
+static void classify_counts_cmin(u8* mem, const u8* map) {
+
+  u32 i = MAP_SIZE;
+
+  if (cmin_edges_only) {
+
+    while (i--) {
+      if (*mem) *mem = 1;
+      mem++;
+    }
+
+  } else {
+
+    while (i--) {
+      *mem = map[*mem];
+      mem++;
+    }
+
+  }
 
 }
 
@@ -2640,6 +2678,10 @@ static u8 run_target(char** argv) {
 
   tb4 = *(u32*)trace_bits;
 
+  if (unlikely(cmin))
+    classify_counts_cmin(trace_bits, cmin_binary_mode ?
+                    count_class_lookup8 : count_class_human);
+  else
 #ifdef __x86_64__
   classify_counts((u64*)trace_bits);
 #else
@@ -2911,14 +2953,13 @@ static u32 write_coverage_cmin(u8* out_fn, u8 res) {
   u32 i, ret = 0;
 
   u8  cco = !!getenv("AFL_CMIN_CRASHES_ONLY"),
-      caa = !!getenv("AFL_CMIN_ALLOW_ANY"),
-      cbm = !!getenv("AFL_CMIN_BINARY_MODE");
+      caa = !!getenv("AFL_CMIN_ALLOW_ANY");
 
   unlink(out_file); /* Ignore errors */
   fd = open(out_fn, O_WRONLY | O_CREAT | O_EXCL, 0600);
   if (fd < 0) PFATAL("Unable to create '%s'", out_fn);
 
-  if (cbm) {
+  if (cmin_binary_mode) {
     for (i = 0; i < MAP_SIZE; i++)
       if (trace_bits[i]) ret++;
 
@@ -8167,7 +8208,7 @@ int main(int argc, char** argv) {
   gettimeofday(&tv, &tz);
   srandom(tv.tv_sec ^ tv.tv_usec ^ getpid());
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:Q")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:Qe")) > 0)
 
     switch (opt) {
 
@@ -8335,6 +8376,16 @@ int main(int argc, char** argv) {
 
         break;
 
+      case 'e': /* Edge Coverage Mode (cmin only) */
+
+        if (cmin_edges_only) FATAL("Multiple -e options not supported");
+        cmin_edges_only = 1;
+
+        /* Make sure people don't set this without AFL_CMIN */
+        if (!getenv("AFL_CMIN")) FATAL("-e can only be used with AFL_CMIN=1");
+
+        break;
+
       default:
 
         usage(argv[0]);
@@ -8393,6 +8444,7 @@ int main(int argc, char** argv) {
   if (getenv("AFL_CMIN")) {
     /* This switches AFL into cmin mode, which writes only cmin traces */
     cmin = 1;
+    cmin_binary_mode = !!getenv("AFL_CMIN_BINARY_MODE");
   }
 
   get_core_count();
