@@ -2984,11 +2984,13 @@ static void perform_dry_run(char** argv) {
            q->len, q->bitmap_size, q->exec_us);
 
     if (cmin) {
+      u8* out_fn;
+
       switch (res) {
         case FAULT_NONE:
         case FAULT_HANG:
         case FAULT_CRASH:
-          u8* out_fn = alloc_printf("%s/.traces/%s", out_dir, fn);
+          out_fn = alloc_printf("%s/.traces/%s", out_dir, fn);
           write_coverage_cmin(out_fn, res);
           ck_free(out_fn);
       }
