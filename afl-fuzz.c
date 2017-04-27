@@ -7500,6 +7500,14 @@ EXP_ST void setup_dirs_fds(void) {
 
   ACTF("Setting up output directories...");
 
+  /* Generally useful file descriptors. */
+
+  dev_null_fd = open("/dev/null", O_RDWR);
+  if (dev_null_fd < 0) PFATAL("Unable to open /dev/null");
+
+  dev_urandom_fd = open("/dev/urandom", O_RDONLY);
+  if (dev_urandom_fd < 0) PFATAL("Unable to open /dev/urandom");
+
   if (sync_id && mkdir(sync_dir, 0700) && errno != EEXIST)
       PFATAL("Unable to create '%s'", sync_dir);
 
@@ -7530,6 +7538,7 @@ EXP_ST void setup_dirs_fds(void) {
     if (mkdir(tmp, 0700) && errno != EEXIST)
       PFATAL("Unable to create '%s'", tmp);
     ck_free(tmp);
+    return;
   }
 
   /* Queue directory for any starting & discovered paths. */
@@ -7591,14 +7600,6 @@ EXP_ST void setup_dirs_fds(void) {
   tmp = alloc_printf("%s/hangs", out_dir);
   if (mkdir(tmp, 0700)) PFATAL("Unable to create '%s'", tmp);
   ck_free(tmp);
-
-  /* Generally useful file descriptors. */
-
-  dev_null_fd = open("/dev/null", O_RDWR);
-  if (dev_null_fd < 0) PFATAL("Unable to open /dev/null");
-
-  dev_urandom_fd = open("/dev/urandom", O_RDONLY);
-  if (dev_urandom_fd < 0) PFATAL("Unable to open /dev/urandom");
 
   /* Gnuplot output file. */
 
