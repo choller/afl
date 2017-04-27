@@ -901,10 +901,6 @@ def main(argv=None):
         
         afl_cmdline = [afl_cmin, '-e', '-i', queues_dir, '-o', updated_tests_dir, '-t', str(opts.afl_timeout), '-m', 'none']
         
-        if opts.afl_cmin_fast:
-            # afl-cmin-fast doesn't support the edge coverage flag (for now)
-            afl_cmdline.remove('-e')
-        
         if opts.test_file:
             afl_cmdline.extend(['-f', opts.test_file])
         
