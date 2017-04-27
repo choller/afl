@@ -2276,7 +2276,8 @@ EXP_ST void init_forkserver(char** argv) {
     close(out_dir_fd);
     close(dev_null_fd);
     close(dev_urandom_fd);
-    close(fileno(plot_file));
+
+    if (plot_file) close(fileno(plot_file));
 
     /* This should improve performance a bit, since it stops the linker from
        doing extra work post-fork(). */
@@ -2548,7 +2549,7 @@ static u8 run_target(char** argv) {
       close(dev_null_fd);
       close(out_dir_fd);
       close(dev_urandom_fd);
-      close(fileno(plot_file));
+      if (plot_file) close(fileno(plot_file));
 
       /* Set sane defaults for ASAN if nothing else specified. */
 
@@ -8546,7 +8547,7 @@ stop_fuzzing:
 
 stop_cmin:
 
-  fclose(plot_file);
+  if (plot_file) fclose(plot_file);
   destroy_queue();
   destroy_extras();
   ck_free(target_path);
