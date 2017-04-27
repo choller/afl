@@ -2765,6 +2765,8 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
   stage_name = "calibration";
   stage_max  = CAL_CYCLES;
 
+  if (cmin) stage_max = 3;
+
   /* Make sure the forkserver is up before we do anything, and let's not
      count its spin-up time toward binary calibration. */
 
@@ -2811,7 +2813,8 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
           if (!var_bytes[i] && first_trace[i] != trace_bits[i]) {
 
             var_bytes[i] = 1;
-            stage_max    = CAL_CYCLES_LONG;
+
+            if (!cmin) stage_max = CAL_CYCLES_LONG;
 
           }
 
