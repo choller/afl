@@ -2905,7 +2905,7 @@ static void check_map_coverage(void) {
 }
 
 /* Write coverage map in human readable format */
-static u32 write_coverage_cmin(u8* out_fn) {
+static u32 write_coverage_cmin(u8* out_fn, u8 res) {
   s32 fd;
   u32 i, ret = 0;
 
@@ -2932,9 +2932,8 @@ static u32 write_coverage_cmin(u8* out_fn) {
       if (!trace_bits[i]) continue;
       ret++;
 
-// TODO: Support cco / caa here
-//      if (child_timed_out) break;
-//      if (!caa && child_crashed != cco) break;
+      if (res == FAULT_HANG) break;
+      if (!caa && (res == FAULT_CRASH) != cco) break;
 
       fprintf(f, "%u%u\n", trace_bits[i], i);
     }
@@ -2984,15 +2983,20 @@ static void perform_dry_run(char** argv) {
       SAYF(cGRA "    len = %u, map size = %u, exec speed = %llu us\n" cRST, 
            q->len, q->bitmap_size, q->exec_us);
 
+    if (cmin) {
+      switch (res) {
+        case FAULT_NONE:
+        case FAULT_HANG:
+        case FAULT_CRASH:
+          u8* out_fn = alloc_printf("%s/.traces/%s", out_dir, fn);
+          write_coverage_cmin(out_fn, res);
+          ck_free(out_fn);
+      }
+    }
+
     switch (res) {
 
       case FAULT_NONE:
-
-        if (cmin) {
-            u8* out_fn = alloc_printf("%s/.traces/%s", out_dir, fn);
-            write_coverage_cmin(out_fn);
-            ck_free(out_fn);
-        }
 
         if (q == queue) check_map_coverage();
 
