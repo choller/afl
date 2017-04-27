@@ -2915,7 +2915,7 @@ static u32 write_coverage_cmin(u8* out_fn) {
 
   unlink(out_file); /* Ignore errors */
   fd = open(out_fn, O_WRONLY | O_CREAT | O_EXCL, 0600);
-  if (fd < 0) PFATAL("Unable to create '%s'", out_file);
+  if (fd < 0) PFATAL("Unable to create '%s'", out_fn);
 
   if (cbm) {
     for (i = 0; i < MAP_SIZE; i++)
@@ -2989,7 +2989,7 @@ static void perform_dry_run(char** argv) {
       case FAULT_NONE:
 
         if (cmin) {
-            u8* out_fn = alloc_printf("%s/.traces/%s", out_dir, q->fname);
+            u8* out_fn = alloc_printf("%s/.traces/%s", out_dir, fn);
             write_coverage_cmin(out_fn);
             ck_free(out_fn);
         }
