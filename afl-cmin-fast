@@ -309,11 +309,11 @@ echo "[*] Obtaining traces for input files in '$IN_DIR'..."
 
   if [ "$STDIN_FILE" = "" ]; then
 
-    "$AFLFUZZ" -m "$MEM_LIMIT" -t "$TIMEOUT" -i "$IN_DIR/" -o "$TRACE_DIR/" -- "$@"
+    __AFL_PERSISTENT=1 AFL_CMIN=1 "$AFLFUZZ" -m "$MEM_LIMIT" -t "$TIMEOUT" -i "$IN_DIR/" -o "$OUT_DIR/" -- "$@"
 
   else
 
-    "$AFLFUZZ" -m "$MEM_LIMIT" -t "$TIMEOUT" -i "$IN_DIR/" -o "$TRACE_DIR/" -f "$STDIN_FILE" -- "$@"
+    __AFL_PERSISTENT=1 AFL_CMIN=1 "$AFLFUZZ" -m "$MEM_LIMIT" -t "$TIMEOUT" -i "$IN_DIR/" -o "$OUT_DIR/" -f "$STDIN_FILE" -- "$@"
 
   fi
 
