@@ -7525,6 +7525,13 @@ EXP_ST void setup_dirs_fds(void) {
 
   }
 
+  if (cmin) {
+    tmp = alloc_printf("%s/.traces", out_dir);
+    if (mkdir(tmp, 0700) && errno != EEXIST)
+      PFATAL("Unable to create '%s'", tmp);
+    ck_free(tmp);
+  }
+
   /* Queue directory for any starting & discovered paths. */
 
   tmp = alloc_printf("%s/queue", out_dir);
