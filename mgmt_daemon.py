@@ -698,6 +698,7 @@ def main(argv=None):
     parser.add_argument("--env-file", dest="env_file", help="Path to a file with additional environment variables", metavar="FILE")
     parser.add_argument("--test-file", dest="test_file", help="Optional path to copy the test file to before reproducing", metavar="FILE")
     parser.add_argument("--afl-timeout", dest="afl_timeout", type=int, default=1000, help="Timeout per test to pass to AFL for corpus refreshing", metavar="MSECS")
+    parser.add_argument("--afl-cmin-fast", dest="afl_cmin_fast", action='store_true', help="Use afl-cmin-fast instead of afl-cmin for corpus reduction (EXPERIMENTAL!)")
     
     parser.add_argument("--firefox", dest="firefox", action='store_true', help="Test Program is Firefox (requires FFPuppet installed)")
     parser.add_argument("--firefox-prefs", dest="firefox_prefs", help="Path to prefs.js file for Firefox", metavar="FILE")
@@ -882,10 +883,16 @@ def main(argv=None):
             shutil.rmtree(updated_tests_dir)
         os.mkdir(updated_tests_dir)
         
-        # Run afl-cmin
-        afl_cmin = os.path.join(opts.aflbindir, "afl-cmin")
+        # Run afl-cmin / afl-cmin-fast
+        if opts.afl_cmin_fast:
+            afl_cmin_name = "afl-cmin-fast"
+        else:
+            afl_cmin_name = "afl-cmin"
+        
+        afl_cmin = os.path.join(opts.aflbindir, afl_cmin_name)
+                    
         if not os.path.exists(afl_cmin):
-            print("Error: Unable to locate afl-cmin binary.", file=sys.stderr)
+            print("Error: Unable to locate %s binary." % afl_cmin_name, file=sys.stderr)
             return 2
         
         if opts.firefox:
@@ -894,12 +901,16 @@ def main(argv=None):
         
         afl_cmdline = [afl_cmin, '-e', '-i', queues_dir, '-o', updated_tests_dir, '-t', str(opts.afl_timeout), '-m', 'none']
         
+        if opts.afl_cmin_fast:
+            # afl-cmin-fast doesn't support the edge coverage flag (for now)
+            afl_cmdline.remove('-e')
+        
         if opts.test_file:
             afl_cmdline.extend(['-f', opts.test_file])
         
         afl_cmdline.extend(cmdline)
         
-        print("Running afl-cmin")
+        print("Running %s" % afl_cmin_name)
         with open(os.devnull, 'w') as devnull:
             env = os.environ.copy()
             env['LD_LIBRARY_PATH'] = os.path.dirname(cmdline[0])
