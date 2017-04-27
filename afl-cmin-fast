@@ -51,7 +51,7 @@ TIMEOUT=none
 unset IN_DIR OUT_DIR STDIN_FILE EXTRA_PAR MEM_LIMIT_GIVEN \
   AFL_CMIN_CRASHES_ONLY AFL_CMIN_ALLOW_ANY QEMU_MODE
 
-while getopts "+i:o:f:m:t:eQC" opt; do
+while getopts "+i:o:f:m:t:QC" opt; do
 
   case "$opt" in 
 
@@ -71,9 +71,6 @@ while getopts "+i:o:f:m:t:eQC" opt; do
          ;;
     "t")
          TIMEOUT="$OPTARG"
-         ;;
-    "e")
-         EXTRA_PAR="$EXTRA_PAR -e"
          ;;
     "C")
          export AFL_CMIN_CRASHES_ONLY=1
@@ -100,6 +97,12 @@ if [ "$TARGET_BIN" = "" -o "$IN_DIR" = "" -o "$OUT_DIR" = "" ]; then
   cat 1>&2 <<_EOF_
 Usage: $0 [ options ] -- /path/to/target_app [ ... ]
 
+Note: This tool is *experimental*. Use at your own risk.
+
+Unlike afl-cmin, this tool calls afl-fuzz to generate traces,
+thereby making use of AFL's persistent mode. This tool is incompatible
+with non-persistent mode binaries.
+
 Required parameters:
 
   -i dir        - input directory with the starting corpus
@@ -115,7 +118,6 @@ Execution control settings:
 Minimization settings:
 
   -C            - keep crashing inputs, reject everything else
-  -e            - solve for edge coverage only, ignore hit counts
 
 For additional tips, please consult docs/README.
 
