@@ -2871,7 +2871,7 @@ abort_calibration:
 
     var_byte_count = count_bytes(var_bytes);
 
-    if (!q->var_behavior) {
+    if (!cmin && !q->var_behavior) {
       mark_as_variable(q);
       queued_variable++;
     }
