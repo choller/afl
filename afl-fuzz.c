@@ -8338,10 +8338,15 @@ int main(int argc, char** argv) {
 
   setup_dirs_fds();
 
+  u8 with_python_support = 0;
 #ifdef USE_PYTHON
   if (init_py())
     FATAL("Failed to initialize Python module");
+  with_python_support = 1;
 #endif
+
+  if (getenv("AFL_PYTHON_MODULE") && !with_python_support)
+    FATAL("Your AFL binary was built without Python support");
 
   setup_cmdline_file(argv + optind);
   read_testcases();
