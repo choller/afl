@@ -94,6 +94,9 @@ EXP_ST u8 *in_dir,                    /* Input directory with test cases  */
 EXP_ST u32 exec_tmout = EXEC_TIMEOUT; /* Configurable exec timeout (ms)   */
 EXP_ST u64 mem_limit = MEM_LIMIT;     /* Memory cap for child (MB)        */
 
+EXP_ST u8  cal_cycles = CAL_CYCLES;   /* Calibration cycles defaults      */
+EXP_ST u8  cal_cycles_long = CAL_CYCLES_LONG;
+
 static u32 stats_update_freq = 1;     /* Stats update frequency (execs)   */
 
 EXP_ST u8  skip_deterministic,        /* Skip deterministic stages?       */
@@ -2762,7 +2765,7 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
   q->cal_failed++;
 
   stage_name = "calibration";
-  stage_max  = CAL_CYCLES;
+  stage_max  = cal_cycles;
 
   /* Make sure the forkserver is up before we do anything, and let's not
      count its spin-up time toward binary calibration. */
@@ -2810,7 +2813,7 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
           if (!var_bytes[i] && first_trace[i] != trace_bits[i]) {
 
             var_bytes[i] = 1;
-            stage_max    = CAL_CYCLES_LONG;
+            stage_max    = cal_cycles_long;
 
           }
 
@@ -8311,6 +8314,12 @@ int main(int argc, char** argv) {
   fix_up_banner(argv[optind]);
 
   check_if_tty();
+
+  if (getenv("AFL_CAL_FAST")) {
+    /* Use less calibration cycles, for slow applications */
+    cal_cycles = 3;
+    cal_cycles_fast = 5;
+  }
 
   if (getenv("AFL_DEBUG"))
     debug = 1;
