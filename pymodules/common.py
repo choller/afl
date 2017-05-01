@@ -24,6 +24,11 @@ def randel(l):
         return None
     return l[random.randint(0,len(l)-1)]
 
+def randel_pop(l):
+    if not l:
+        return None
+    return l.pop(random.randint(0,len(l)-1))
+
 def write_exc_example(data, exc):
     exc_name = re.sub(r'[^a-zA-Z0-9]', '_', repr(exc))
     
