@@ -5280,7 +5280,7 @@ static u8 fuzz_one(char** argv) {
 
   orig_in = in_buf = mmap(0, len, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
 
-  if (orig_in == MAP_FAILED) PFATAL("Unable to mmap '%s'", queue_cur->fname);
+  if (orig_in == MAP_FAILED) PFATAL("Unable to mmap '%s' with len %u", queue_cur->fname, len);
 
   close(fd);
 
@@ -6387,6 +6387,9 @@ retry_external_pick:
     ck_free(new_buf);
 
     if (retbuf) {
+      if (!retlen)
+        goto abandon_entry;
+
       if (common_fuzz_stuff(argv, retbuf, retlen)) {
         free(retbuf);
         goto abandon_entry;
