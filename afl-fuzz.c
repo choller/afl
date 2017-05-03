@@ -8321,7 +8321,7 @@ int main(int argc, char** argv) {
   if (getenv("AFL_CAL_FAST")) {
     /* Use less calibration cycles, for slow applications */
     cal_cycles = 3;
-    cal_cycles_fast = 5;
+    cal_cycles_long = 5;
   }
 
   if (getenv("AFL_DEBUG"))
