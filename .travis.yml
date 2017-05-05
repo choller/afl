@@ -9,10 +9,12 @@ before_script:
   - sudo apt-get update -qq
   - sudo apt-get install clang-4.0 -y
 
+before_install:
+    - export CC=/usr/bin/clang-4.0
+    - export CXX=/usr/bin/clang++-4.0
+
 env:
   global:
     - LLVM_CONFIG=/usr/bin/llvm-config-4.0
-    - CC=/usr/bin/clang-4.0
-    - CXX=/usr/bin/clang++-4.0
 
 script: make ci
