@@ -1,5 +1,14 @@
 language: c
 
+before_script:
+  - curl http://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+  - echo "deb http://apt.llvm.org/precise/ llvm-toolchain-precise-4.0 main" | sudo tee -a /etc/apt/sources.list
+  - sudo apt-get update -qq
+  - sudo apt-get install clang-4.0 -y
+  - sudo ln -s /usr/bin/llvm-config-4.0 /usr/bin/llvm-config
+  - sudo ln -s /usr/bin/clang-4.0 /usr/bin/clang
+  - sudo ln -s /usr/bin/clang++-4.0 /usr/bin/clang++
+
 compiler:
   - gcc
 
