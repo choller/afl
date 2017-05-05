@@ -151,3 +151,6 @@ publish: clean
 	cat docs/ChangeLog >~/www/afl/ChangeLog.txt
 	cat docs/QuickStartGuide.txt >~/www/afl/QuickStartGuide.txt
 	echo -n "$(VERSION)" >~/www/afl/version.txt
+
+ci: all
+	$(MAKE) -C llvm_mode
