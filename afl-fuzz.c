@@ -4453,8 +4453,20 @@ static void show_stats(void) {
 
   sprintf(tmp, "%05d", *func_id);
   SAYF(bV bSTOP "  current function focus : " cRST "%-51s" bSTG bV "\n", tmp);
-  const u8* func_name = "<unknown>";
-  SAYF(bV bSTOP cRST "    %-73s " bSTG bV "\n", func_name);
+
+  if (!*func_id) {
+    sprintf(tmp, "%s", "<no function currently focused>");
+  } else if (func_id_map[*func_id]) {
+    sprintf(tmp, "%s", func_id_map[*func_id]);
+  } else {
+    sprintf(tmp, "%s", "<unknown> (global? check coverage map?)");
+  }
+
+  SAYF(bV bSTOP cRST "    %-73s " bSTG bV "\n", tmp);
+
+  sprintf(tmp, "%05d", last_path_bitmap_pos);
+
+  SAYF(bV bSTOP "  last transition : " cRST "%-58s" bSTG bV "\n", tmp);
 
   if (last_path_from) {
      sprintf(tmp, "%s:%d", last_path_from->filename, last_path_from->line);
@@ -4462,7 +4474,6 @@ static void show_stats(void) {
      sprintf(tmp, "<unknown>");
   }
 
-  SAYF(bV bSTOP "%-78s" bSTG bV "\n", "  last transition :");
   SAYF(bV bSTOP cRST "    %-73s " bSTG bV "\n", tmp);
   SAYF(bV bSTOP "%-78s" bSTG bV "\n", "  -> ");
 
