@@ -8675,8 +8675,6 @@ int main(int argc, char** argv) {
         queue_cur = queue_cur->next;
       }
 
-      show_stats();
-
       if (not_on_tty) {
         ACTF("Entering queue cycle %llu.", queue_cycle);
         fflush(stdout);
@@ -8686,10 +8684,27 @@ int main(int argc, char** argv) {
          recombination strategies next. */
 
       if (queued_paths == prev_queued) {
+        if (use_splicing) {
+          if (*func_id && !func_id_fixed) {
+            /* We aleady did a full round with no new finds and tried
+               splicing. The next step then is to switch to a new function. */
+            func_id_listidx++;
 
-        if (use_splicing) cycles_wo_finds++; else use_splicing = 1;
+            if (func_id_listidx < func_id_listlen) {
+              *func_id = func_id_list[func_id_listidx];
+            } else {
+              /* If we are at the end of the function list, consider this a cycle
+                 without any finds and start over with the first function */
+              func_id_listidx = 0;
+              *func_id = func_id_list[0];
+              cycles_wo_finds++;
+            }
+          } else cycles_wo_finds++;
+        } else use_splicing = 1;
 
       } else cycles_wo_finds = 0;
+
+      show_stats();
 
       prev_queued = queued_paths;
 
