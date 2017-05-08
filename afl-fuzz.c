@@ -434,8 +434,8 @@ static void read_covmap(u8* covmap_file) {
 
       while (tok) {
         switch (idx) {
-          case 0: cfuncid = atoi(tok); break; /* Function ID */
-          case 1: cbb = atoi(tok); break; /* Basic Block ID */
+          case 0: cbb = atoi(tok); break; /* Basic Block ID */
+          case 1: cfuncid = atoi(tok); break; /* Function ID */
           case 2: /* Function Name */
             if (!func_id_map[cfuncid])
               func_id_map[cfuncid] = tok;
