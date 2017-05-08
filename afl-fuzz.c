@@ -438,7 +438,7 @@ static void read_covmap(u8* covmap_file) {
           case 1: cfuncid = atoi(tok); break; /* Function ID */
           case 2: /* Function Name */
             if (!func_id_map[cfuncid])
-              func_id_map[cfuncid] = tok;
+              func_id_map[cfuncid] = ck_strdup(tok);
             break;
           case 3: cline = atoi(tok); break; /* Line Number */
           case 4: strcat(cfile, tok); break; /* Filename */
