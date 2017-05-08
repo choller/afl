@@ -137,6 +137,22 @@ static s32 forksrv_pid,               /* PID of the fork server           */
 
 EXP_ST u8* trace_bits;                /* SHM with instrumentation bitmap  */
 
+EXP_ST u32 *func_id;                  /* SHM with current function id     */
+
+EXP_ST u8* func_id_map[MAP_SIZE];    /* Mapping from func id to name     */
+
+typedef struct  {
+  u8* filename;                       /* File name                        */
+  u32 line;                           /* Line number                      */
+} bb_entry;
+
+EXP_ST u32 last_path_bitmap_pos;      /* Index of the last path in bitmap */
+EXP_ST bb_entry *last_path_from;
+EXP_ST bb_entry *last_path_to;
+
+EXP_ST bb_entry** 
+  func_bb_map[MAP_SIZE];              /* Map funcid -> (map of bb -> loc) */
+
 EXP_ST u8  virgin_bits[MAP_SIZE],     /* Regions yet untouched by fuzzing */
            virgin_hang[MAP_SIZE],     /* Bits we haven't seen in hangs    */
            virgin_crash[MAP_SIZE];    /* Bits we haven't seen in crashes  */
@@ -144,6 +160,7 @@ EXP_ST u8  virgin_bits[MAP_SIZE],     /* Regions yet untouched by fuzzing */
 static u8  var_bytes[MAP_SIZE];       /* Bytes that appear to be variable */
 
 static s32 shm_id;                    /* ID of the SHM region             */
+static s32 shm_func_id;               /* ID of the SHM region for func id */
 
 static volatile u8 stop_soon,         /* Ctrl-C pressed?                  */
                    clear_screen = 1,  /* Window resized?                  */
@@ -388,6 +405,97 @@ static void shuffle_ptrs(void** ptrs, u32 cnt) {
   }
 
 }
+
+/* Read coverage data */
+
+static void read_covmap(u8* covmap_file) {
+    FILE* f;
+    u8 tmp[MAX_LINE];
+
+    /* Warning, this code is almost as ugly as the UI code further down
+       in this program ;D You've been warned... */
+
+    if (!(f = fopen(covmap_file, "r")))
+      PFATAL("Unable to open specified coverage map");
+
+    while (fgets(tmp, MAX_LINE, f)) {
+
+      u8* tok = strtok(tmp, " ");
+      u32 idx = 0;
+
+      u32 cfuncid = 0;
+      u32 cbb = 0;
+      u32 cline = 0;
+
+      u8 cfile[MAX_LINE];
+      cfile[0] = '\0';
+
+      while (tok) {
+        switch (idx) {
+          case 0: cfuncid = atoi(tok); break; /* Function ID */
+          case 1: cbb = atoi(tok); break; /* Basic Block ID */
+          case 2: /* Function Name */
+            if (!func_id_map[cfuncid])
+              func_id_map[cfuncid] = tok;
+            break;
+          case 3: cline = atoi(tok); break; /* Line Number */
+          case 4: strcat(cfile, tok); break; /* Filename */
+        }
+
+        tok = strtok(NULL, " ");
+        idx++;
+      }
+
+      if (!func_bb_map[cfuncid])
+        func_bb_map[cfuncid] = ck_alloc(MAP_SIZE * sizeof(bb_entry*));
+
+      bb_entry** bbm = func_bb_map[cfuncid];
+      
+      if (!bbm[cbb]) {
+        bbm[cbb] = ck_alloc(sizeof(bb_entry));
+        bbm[cbb]->filename = ck_alloc(strlen(cfile) + 1);
+        strcpy(bbm[cbb]->filename, cfile);
+        bbm[cbb]->line = cline;
+      }
+
+    }
+
+    fclose(f);
+}
+
+/* Update last path */
+
+static void update_last_path() {
+
+   /* We can only do this if we are sticking to a specific function ... */
+   if (!*func_id) return;
+
+   /* ... and if we have coverage information for it in our map */
+   if (!func_bb_map[*func_id]) return;
+
+   bb_entry** bbm = func_bb_map[*func_id];
+
+   u32 i;
+
+   for (i = 0; i < MAP_SIZE; ++i) {
+     if (!bbm[i]) continue;
+
+     // Looking for prev >> 1 ^ cur = last_path_bitmap_pos
+     u32 cand = (last_path_bitmap_pos ^ i) << 1;
+
+     if (bbm[cand]) {
+        last_path_from = bbm[cand];
+        last_path_to = bbm[i];
+        break;
+     } else if (bbm[cand+1]) {
+        last_path_from = bbm[cand+1];
+        last_path_to = bbm[i];
+        break;
+     }
+   }
+
+}
+
 
 #ifdef USE_PYTHON
 #include <Python.h>
@@ -1019,6 +1127,8 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
 
   last_path_time = get_cur_time();
 
+  update_last_path();
+
 }
 
 
@@ -1127,17 +1237,51 @@ static inline u8 has_new_bits(u8* virgin_map) {
 
 #ifdef __x86_64__
 
-        if ((cur[0] && vir[0] == 0xff) || (cur[1] && vir[1] == 0xff) ||
-            (cur[2] && vir[2] == 0xff) || (cur[3] && vir[3] == 0xff) ||
-            (cur[4] && vir[4] == 0xff) || (cur[5] && vir[5] == 0xff) ||
-            (cur[6] && vir[6] == 0xff) || (cur[7] && vir[7] == 0xff)) ret = 2;
-        else ret = 1;
+        /* We explicitly unfold this again to calculate the exact address at
+           which the bitmap changed, hoping that we can resolve it back to
+           the original basic blocks that belong to the edge */
+
+        if (cur[0] && vir[0] == 0xff) {
+          ret = 2;
+          last_path_bitmap_pos = i << 3;
+        } else if (cur[1] && vir[1] == 0xff) {
+          ret = 2;
+          last_path_bitmap_pos = (i << 3) + 1;
+        } else if (cur[2] && vir[2] == 0xff) {
+          ret = 2;
+          last_path_bitmap_pos = (i << 3) + 2;
+        } else if (cur[3] && vir[3] == 0xff) {
+          ret = 2;
+          last_path_bitmap_pos = (i << 3) + 3;
+        } else if (cur[4] && vir[4] == 0xff) {
+          ret = 2;
+          last_path_bitmap_pos = (i << 3) + 4;
+        } else if (cur[5] && vir[5] == 0xff) {
+          ret = 2;
+          last_path_bitmap_pos = (i << 3) + 5;
+        } else if (cur[6] && vir[6] == 0xff) {
+          ret = 2;
+          last_path_bitmap_pos = (i << 3) + 6;
+        } else if (cur[7] && vir[7] == 0xff) {
+          ret = 2;
+          last_path_bitmap_pos = (i << 3) + 7;
+        } else ret = 1;
 
 #else
 
-        if ((cur[0] && vir[0] == 0xff) || (cur[1] && vir[1] == 0xff) ||
-            (cur[2] && vir[2] == 0xff) || (cur[3] && vir[3] == 0xff)) ret = 2;
-        else ret = 1;
+        if (cur[0] && vir[0] == 0xff) {
+          ret = 2;
+          last_path_bitmap_pos = i << 2;
+        } else if (cur[1] && vir[1] == 0xff) {
+          ret = 2;
+          last_path_bitmap_pos = (i << 2) + 1;
+        } else if (cur[2] && vir[2] == 0xff) {
+          ret = 2;
+          last_path_bitmap_pos = (i << 2) + 2;
+        } else if (cur[3] && vir[3] == 0xff) {
+          ret = 2;
+          last_path_bitmap_pos = (i << 2) + 3;
+        } else ret = 1;
 
 #endif /* ^__x86_64__ */
 
@@ -1415,6 +1559,7 @@ static inline void classify_counts(u32* mem) {
 static void remove_shm(void) {
 
   shmctl(shm_id, IPC_RMID, NULL);
+  shmctl(shm_func_id, IPC_RMID, NULL);
 
 }
 
@@ -1553,6 +1698,31 @@ static void cull_queue(void) {
 
 /* Configure shared memory and virgin_bits. This is called at startup. */
 
+EXP_ST void setup_funcid_shm(void) {
+  u8* shm_str;
+
+  shm_func_id = shmget(IPC_PRIVATE, 4, IPC_CREAT | IPC_EXCL | 0600);
+
+  if (shm_func_id < 0) PFATAL("shmget() failed");
+
+  shm_str = alloc_printf("%d", shm_func_id);
+
+  setenv("AFL_SHM_FUNC_ID", shm_str, 1);
+
+  ck_free(shm_str);
+
+  func_id = shmat(shm_func_id, NULL, 0);
+  
+  if (!func_id) PFATAL("shmat() failed");
+
+  /* Explicitly initialize with 0 */
+  *func_id = 0;
+
+  shm_str = getenv("AFL_COV_FUNC_ID");
+  if (shm_str)
+    *func_id = atoi(shm_str);
+}
+
 EXP_ST void setup_shm(void) {
 
   u8* shm_str;
@@ -1583,6 +1753,7 @@ EXP_ST void setup_shm(void) {
   
   if (!trace_bits) PFATAL("shmat() failed");
 
+  setup_funcid_shm();
 }
 
 
@@ -4264,8 +4435,33 @@ static void show_stats(void) {
        "   uniq hangs : " cRST "%-6s " bSTG bV "\n",
        DTD(cur_ms, last_hang_time), tmp);
 
+  SAYF(bVR bH bSTOP cCYA " coverage info " bSTG bH30 bH5 bH2 bH bHT bH20 bH2 bH bVL "\n");
+
+  sprintf(tmp, "%05d", *func_id);
+  SAYF(bV bSTOP "  current function focus : " cRST "%-51s" bSTG bV "\n", tmp);
+  const u8* func_name = "<unknown>";
+  SAYF(bV bSTOP cRST "    %-73s " bSTG bV "\n", func_name);
+
+  if (last_path_from) {
+     sprintf(tmp, "%s:%d", last_path_from->filename, last_path_from->line);
+  } else {
+     sprintf(tmp, "<unknown>");
+  }
+
+  SAYF(bV bSTOP "%-78s" bSTG bV "\n", "  last transition :");
+  SAYF(bV bSTOP cRST "    %-73s " bSTG bV "\n", tmp);
+  SAYF(bV bSTOP "%-78s" bSTG bV "\n", "  -> ");
+
+  if (last_path_to) {
+     sprintf(tmp, "%s:%d", last_path_to->filename, last_path_to->line);
+  } else {
+     sprintf(tmp, "<unknown>");
+  }
+
+  SAYF(bV bSTOP cRST "    %-73s " bSTG bV "\n", tmp);
+
   SAYF(bVR bH bSTOP cCYA " cycle progress " bSTG bH20 bHB bH bSTOP cCYA
-       " map coverage " bSTG bH bHT bH20 bH2 bH bVL "\n");
+       " map coverage " bSTG bH bH bH20 bH2 bH bVL "\n");
 
   /* This gets funny because we want to print several variable-length variables
      together, but then cram them into a fixed-width field - so we need to
@@ -8359,6 +8555,10 @@ int main(int argc, char** argv) {
 
   if (getenv("AFL_PYTHON_MODULE") && !with_python_support)
     FATAL("Your AFL binary was built without Python support");
+
+  if (getenv("AFL_COVMAP"))
+    read_covmap(getenv("AFL_COVMAP"));
+    
 
   setup_cmdline_file(argv + optind);
   read_testcases();

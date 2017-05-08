@@ -50,6 +50,8 @@ static s32 child_pid;                 /* PID of the tested program         */
 
 static u8* trace_bits;                /* SHM with instrumentation bitmap   */
 
+static u32* func_id;                  /* SHM with function ID to limit cov */
+
 static u8 *out_file,                  /* Trace output file                 */
           *doc_path,                  /* Path to docs                      */
           *target_path,               /* Path to target binary             */
@@ -60,6 +62,7 @@ static u32 exec_tmout;                /* Exec timeout (ms)                 */
 static u64 mem_limit = MEM_LIMIT;     /* Memory limit (MB)                 */
 
 static s32 shm_id;                    /* ID of the SHM region              */
+static s32 shm_func_id;               /* ID of the SHM region for func id  */
 
 static u8  quiet_mode,                /* Hide non-essential messages?      */
            edges_only,                /* Ignore hit counts?                */
@@ -130,11 +133,37 @@ static void classify_counts(u8* mem, const u8* map) {
 static void remove_shm(void) {
 
   shmctl(shm_id, IPC_RMID, NULL);
+  shmctl(shm_func_id, IPC_RMID, NULL);
 
 }
 
 
 /* Configure shared memory. */
+
+static void setup_funcid_shm(void) {
+  u8* shm_str;
+
+  shm_func_id = shmget(IPC_PRIVATE, 4, IPC_CREAT | IPC_EXCL | 0600);
+
+  if (shm_func_id < 0) PFATAL("shmget() failed");
+
+  shm_str = alloc_printf("%d", shm_func_id);
+
+  setenv("AFL_SHM_FUNC_ID", shm_str, 1);
+
+  ck_free(shm_str);
+
+  func_id = shmat(shm_func_id, NULL, 0);
+  
+  if (!func_id) PFATAL("shmat() failed");
+
+  /* Explicitly initialize with 0 */
+  *func_id = 0;
+
+  shm_str = getenv("AFL_COV_FUNC_ID");
+  if (shm_str)
+    *func_id = atoi(shm_str);
+}
 
 static void setup_shm(void) {
 
@@ -156,6 +185,7 @@ static void setup_shm(void) {
   
   if (!trace_bits) PFATAL("shmat() failed");
 
+  setup_funcid_shm();
 }
 
 /* Write results. */

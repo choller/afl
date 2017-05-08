@@ -54,6 +54,8 @@ u8* __afl_area_ptr = __afl_area_initial;
 
 __thread u32 __afl_prev_loc;
 
+u32 __afl_func_id_initial = 0;
+u32* __afl_func_id_ptr = &__afl_func_id_initial;
 
 /* Running in persistent mode? */
 
@@ -85,6 +87,15 @@ static void __afl_map_shm(void) {
 
     __afl_area_ptr[0] = 1;
 
+  }
+
+  u8 *func_id_str = getenv("AFL_SHM_FUNC_ID");
+
+  if (func_id_str) {
+    u32 shm_id = atoi(func_id_str);
+
+    __afl_func_id_ptr = shmat(shm_id, NULL, 0);
+    if (__afl_func_id_ptr == (void *)-1) _exit(1);
   }
 
 }

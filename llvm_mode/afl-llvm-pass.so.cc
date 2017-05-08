@@ -51,6 +51,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 
 using namespace llvm;
 
@@ -75,6 +76,8 @@ namespace {
             getline(fileStream, line);
           }
         }
+
+        myWriteCoverageMap = !!getenv("AFL_WRITE_COVERAGE_MAP");
       }
 
       bool runOnModule(Module &M) override;
@@ -86,6 +89,7 @@ namespace {
     protected:
 
       std::list<std::string> myWhitelist;
+      bool myWriteCoverageMap;
   };
 
 }
@@ -135,18 +139,37 @@ bool AFLCoverage::runOnModule(Module &M) {
       M, Int32Ty, false, GlobalValue::ExternalLinkage, 0, "__afl_prev_loc",
       0, GlobalVariable::GeneralDynamicTLSModel, 0, false);
 
+  GlobalVariable *AFLFuncIdPtr =
+      new GlobalVariable(M, PointerType::get(Int32Ty, 0), false,
+                         GlobalValue::ExternalLinkage, 0, "__afl_func_id_ptr");
+
   /* Instrument all the things! */
 
   int inst_blocks = 0;
 
-  for (auto &F : M)
-    for (auto &BB : F) {
+  /* Output file for coverage map, only used if requested */
+  std::ofstream covMapStream;
 
-      BasicBlock::iterator IP = BB.getFirstInsertionPt();
-      IRBuilder<> IRB(&(*IP));
+  for (auto &F : M) {
 
-      if (!myWhitelist.empty()) {
-          bool instrumentBlock = false;
+    /* Make up an ID for this function */
+    unsigned int cur_func = R(MAP_SIZE);
+
+    /* Iterate over all blocks and just store them in a vector because
+     * we will be modifying the basic blocks in F as we go, so iterating
+     * over F while instrumenting won't work */
+    std::vector<BasicBlock *> targetBlocks;
+    for (auto &BB : F)
+      targetBlocks.push_back(&BB);
+
+    for (auto *BB : targetBlocks) {
+      BasicBlock::iterator IP = BB->getFirstInsertionPt();
+
+      unsigned int instLine;
+      StringRef instFilename;
+
+      /* Only do filename and line resolving when we actually need it */
+      if (myWriteCoverageMap || !myWhitelist.empty()) {
 
           /* Get the current location using debug information.
            * For now, just instrument the block if we are not able
@@ -162,8 +185,9 @@ bool AFLCoverage::runOnModule(Module &M) {
               DILocation cDILoc(Loc.getAsMDNode(M.getContext()));
               DILocation oDILoc = cDILoc.getOrigLocation();
 
-              unsigned int instLine = oDILoc.getLineNumber();
-              StringRef instFilename = oDILoc.getFilename();
+              instLine = oDILoc.getLineNumber();
+              instFilename = oDILoc.getFilename();
+              
 
               if (instFilename.str().empty()) {
                   /* If the original location is empty, use the actual location */
@@ -173,8 +197,8 @@ bool AFLCoverage::runOnModule(Module &M) {
 #else
               DILocation *cDILoc = dyn_cast<DILocation>(Loc.getAsMDNode());
 
-              unsigned int instLine = cDILoc->getLine();
-              StringRef instFilename = cDILoc->getFilename();
+              instLine = cDILoc->getLine();
+              instFilename = cDILoc->getFilename();
 
               if (instFilename.str().empty()) {
                   /* If the original location is empty, try using the inlined location */
@@ -185,19 +209,23 @@ bool AFLCoverage::runOnModule(Module &M) {
                   }
               }
 #endif /* LLVM_OLD_DEBUG_API */
+          }
+      }
 
-              /* Continue only if we know where we actually are */
-              if (!instFilename.str().empty()) {
-                  for (std::list<std::string>::iterator it = myWhitelist.begin(); it != myWhitelist.end(); ++it) {
-                      /* We don't check for filename equality here because
-                       * filenames might actually be full paths. Instead we
-                       * check that the actual filename ends in the filename
-                       * specified in the list. */
-                      if (instFilename.str().length() >= it->length()) {
-                          if (instFilename.str().compare(instFilename.str().length() - it->length(), it->length(), *it) == 0) {
-                              instrumentBlock = true;
-                              break;
-                          }
+      if (!myWhitelist.empty()) {
+          bool instrumentBlock = false;
+
+          /* Continue only if we know where we actually are */
+          if (!instFilename.str().empty()) {
+              for (std::list<std::string>::iterator it = myWhitelist.begin(); it != myWhitelist.end(); ++it) {
+                  /* We don't check for filename equality here because
+                   * filenames might actually be full paths. Instead we
+                   * check that the actual filename ends in the filename
+                   * specified in the list. */
+                  if (instFilename.str().length() >= it->length()) {
+                      if (instFilename.str().compare(instFilename.str().length() - it->length(), it->length(), *it) == 0) {
+                          instrumentBlock = true;
+                          break;
                       }
                   }
               }
@@ -210,42 +238,91 @@ bool AFLCoverage::runOnModule(Module &M) {
 
       if (R(100) >= inst_ratio) continue;
 
-      /* Make up cur_loc */
+      /* By now, we know that we are supposed to instrument this basic block */
+
+      /* Step 1: Write conditional code into BB */
+
+      IRBuilder<> IRB(&(*IP));
+
+      /* 1a: Dereference __afl_func_id_ptr */
+
+      Value *AFLFuncId = IRB.CreateLoad(AFLFuncIdPtr);
+
+      /* 1b: Load __afl_func_id_ptr value and compare it to our function id */
+
+      Value *funcIDA = IRB.CreateLoad(AFLFuncId);
+      Value *funcIDB = ConstantInt::get(Int32Ty, cur_func);
+      Value *cond1 = IRB.CreateICmpEQ(funcIDA, funcIDB);
+      Value *cond2 = IRB.CreateICmpEQ(funcIDA, ConstantInt::get(Int8Ty, 0));
+      Value *cond = IRB.CreateOr(cond1, cond2);
+
+      /* Step 2: Split the basic block into two so we can branch */
+      
+      TerminatorInst* thenInst = SplitBlockAndInsertIfThen(cond, &(*IP), false);
+
+      /* Step 3: Write coverage code into our new then block */
+
+      IRB.SetInsertPoint(thenInst);
+
+      /* 3a: Make up cur_loc */
 
       unsigned int cur_loc = R(MAP_SIZE);
-
       ConstantInt *CurLoc = ConstantInt::get(Int32Ty, cur_loc);
 
-      /* Load prev_loc */
+      /* 3b: Load prev_loc */
 
       LoadInst *PrevLoc = IRB.CreateLoad(AFLPrevLoc);
       PrevLoc->setMetadata(M.getMDKindID("nosanitize"), MDNode::get(C, None));
       Value *PrevLocCasted = IRB.CreateZExt(PrevLoc, IRB.getInt32Ty());
 
-      /* Load SHM pointer */
+      /* 3c: Load SHM pointer */
 
       LoadInst *MapPtr = IRB.CreateLoad(AFLMapPtr);
       MapPtr->setMetadata(M.getMDKindID("nosanitize"), MDNode::get(C, None));
       Value *MapPtrIdx =
           IRB.CreateGEP(MapPtr, IRB.CreateXor(PrevLocCasted, CurLoc));
 
-      /* Update bitmap */
+      /* 3d: Update bitmap */
 
       LoadInst *Counter = IRB.CreateLoad(MapPtrIdx);
       Counter->setMetadata(M.getMDKindID("nosanitize"), MDNode::get(C, None));
       Value *Incr = IRB.CreateAdd(Counter, ConstantInt::get(Int8Ty, 1));
-      IRB.CreateStore(Incr, MapPtrIdx)
-          ->setMetadata(M.getMDKindID("nosanitize"), MDNode::get(C, None));
+      IRB.CreateStore(Incr, MapPtrIdx)->setMetadata(M.getMDKindID("nosanitize"), MDNode::get(C, None));
 
-      /* Set prev_loc to cur_loc >> 1 */
+      /* 3f: Set prev_loc to cur_loc >> 1 */
 
       StoreInst *Store =
           IRB.CreateStore(ConstantInt::get(Int32Ty, cur_loc >> 1), AFLPrevLoc);
       Store->setMetadata(M.getMDKindID("nosanitize"), MDNode::get(C, None));
 
+      /* Done, pfew... */
+
       inst_blocks++;
 
+      /* Write coverage map data */
+      if (myWriteCoverageMap) {
+          /* Open output file for coverage map, if not open yet */
+          if (!covMapStream.is_open()) {
+              /* Randomize the identifier for the current CU */
+              unsigned int cur_cu = R(MAP_SIZE);
+              std::string covMapFilename = std::to_string(cur_cu) + ".covmap";
+              covMapStream.open(covMapFilename);
+              if (!covMapStream)
+                  report_fatal_error("Unable to open AFL_COVERAGE_MAP for writing");
+          }
+
+          covMapStream << cur_loc << " " << cur_func;
+
+          if (F.hasName())
+              covMapStream << " " << F.getName().str();
+
+          if (!instFilename.str().empty())
+              covMapStream << " " << instLine << " " << instFilename.str();
+
+          covMapStream << std::endl;
+      }
     }
+  }
 
   /* Say something nice. */
 
