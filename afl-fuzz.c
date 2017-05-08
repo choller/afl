@@ -1244,45 +1244,57 @@ static inline u8 has_new_bits(u8* virgin_map) {
            the original basic blocks that belong to the edge */
 
         if (cur[0] && vir[0] == 0xff) {
+          u32 j = (MAP_SIZE >> 3) - i - 1;
           ret = 2;
-          last_path_bitmap_pos = i << 3;
+          last_path_bitmap_pos = j << 3;
         } else if (cur[1] && vir[1] == 0xff) {
+          u32 j = (MAP_SIZE >> 3) - i - 1;
           ret = 2;
-          last_path_bitmap_pos = (i << 3) + 1;
+          last_path_bitmap_pos = (j << 3) + 1;
         } else if (cur[2] && vir[2] == 0xff) {
+          u32 j = (MAP_SIZE >> 3) - i - 1;
           ret = 2;
-          last_path_bitmap_pos = (i << 3) + 2;
+          last_path_bitmap_pos = (j << 3) + 2;
         } else if (cur[3] && vir[3] == 0xff) {
+          u32 j = (MAP_SIZE >> 3) - i - 1;
           ret = 2;
-          last_path_bitmap_pos = (i << 3) + 3;
+          last_path_bitmap_pos = (j << 3) + 3;
         } else if (cur[4] && vir[4] == 0xff) {
+          u32 j = (MAP_SIZE >> 3) - i - 1;
           ret = 2;
-          last_path_bitmap_pos = (i << 3) + 4;
+          last_path_bitmap_pos = (j << 3) + 4;
         } else if (cur[5] && vir[5] == 0xff) {
+          u32 j = (MAP_SIZE >> 3) - i - 1;
           ret = 2;
-          last_path_bitmap_pos = (i << 3) + 5;
+          last_path_bitmap_pos = (j << 3) + 5;
         } else if (cur[6] && vir[6] == 0xff) {
+          u32 j = (MAP_SIZE >> 3) - i - 1;
           ret = 2;
-          last_path_bitmap_pos = (i << 3) + 6;
+          last_path_bitmap_pos = (j << 3) + 6;
         } else if (cur[7] && vir[7] == 0xff) {
+          u32 j = (MAP_SIZE >> 3) - i - 1;
           ret = 2;
-          last_path_bitmap_pos = (i << 3) + 7;
+          last_path_bitmap_pos = (j << 3) + 7;
         } else ret = 1;
 
 #else
 
         if (cur[0] && vir[0] == 0xff) {
+          u32 j = (MAP_SIZE >> 2) - i - 1;
           ret = 2;
-          last_path_bitmap_pos = i << 2;
+          last_path_bitmap_pos = j << 2;
         } else if (cur[1] && vir[1] == 0xff) {
+          u32 j = (MAP_SIZE >> 2) - i - 1;
           ret = 2;
-          last_path_bitmap_pos = (i << 2) + 1;
+          last_path_bitmap_pos = (j << 2) + 1;
         } else if (cur[2] && vir[2] == 0xff) {
+          u32 j = (MAP_SIZE >> 2) - i - 1;
           ret = 2;
-          last_path_bitmap_pos = (i << 2) + 2;
+          last_path_bitmap_pos = (j << 2) + 2;
         } else if (cur[3] && vir[3] == 0xff) {
+          u32 j = (MAP_SIZE >> 2) - i - 1;
           ret = 2;
-          last_path_bitmap_pos = (i << 2) + 3;
+          last_path_bitmap_pos = (j << 2) + 3;
         } else ret = 1;
 
 #endif /* ^__x86_64__ */
