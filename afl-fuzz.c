@@ -491,6 +491,30 @@ static void read_covmap(u8* covmap_file) {
     fclose(f);
 }
 
+static void cleanup_covmaps() {
+   u32 i,j;
+
+   for (i = 0; i < func_id_listlen; ++i) {
+     u16 cfunc_id = func_id_list[i];
+
+     if (func_id_map[cfunc_id])
+       ck_free(func_id_map[i]); /* Allocated by ck_strdup() */
+
+     if (func_bb_map[cfunc_id]) {
+       bb_entry** bbm = func_bb_map[cfunc_id];
+       for (j = 0; j < MAP_SIZE; ++j)
+         if (bbm[j]) {
+           ck_free(bbm[j]->filename);
+           ck_free(bbm[j]);
+         }
+
+       ck_free(func_bb_map[cfunc_id]);
+     }
+   }
+
+   ck_free(func_id_list);
+}
+
 /* Update last path */
 
 static void update_last_path() {
@@ -8757,6 +8781,8 @@ stop_fuzzing:
   destroy_extras();
   ck_free(target_path);
   ck_free(sync_id);
+
+  cleanup_covmaps();
 
   alloc_report();
 
