@@ -153,6 +153,11 @@ EXP_ST bb_entry *last_path_to;
 EXP_ST bb_entry** 
   func_bb_map[MAP_SIZE];              /* Map funcid -> (map of bb -> loc) */
 
+EXP_ST u16 *func_id_list;             /* List of all valid function ids   */
+EXP_ST u16 func_id_listlen;           /* Length of the previous list      */
+EXP_ST u16 func_id_listidx;           /* Current index in previous list   */
+EXP_ST u8  func_id_fixed;             /* Is the function id fixed?        */
+
 EXP_ST u8  virgin_bits[MAP_SIZE],     /* Regions yet untouched by fuzzing */
            virgin_hang[MAP_SIZE],     /* Bits we haven't seen in hangs    */
            virgin_crash[MAP_SIZE];    /* Bits we haven't seen in crashes  */
@@ -418,6 +423,8 @@ static void read_covmap(u8* covmap_file) {
     if (!(f = fopen(covmap_file, "r")))
       PFATAL("Unable to open specified coverage map");
 
+    u16 funcids[MAP_SIZE];
+
     while (fgets(tmp, MAX_LINE, f)) {
       u32 line_len = strlen(tmp);
       if (line_len && tmp[line_len - 1] == '\n') tmp[line_len - 1] = '\0';
@@ -448,8 +455,17 @@ static void read_covmap(u8* covmap_file) {
         idx++;
       }
 
-      if (!func_bb_map[cfuncid])
+      if (!func_bb_map[cfuncid]) {
         func_bb_map[cfuncid] = ck_alloc(MAP_SIZE * sizeof(bb_entry*));
+
+        if (cfuncid > 0xFFFF)
+          PFATAL("Function IDs larger than 16-bit are unsupported");
+
+        if (!func_id_fixed)
+          funcids[func_id_listlen] = cfuncid;
+
+        func_id_listlen++;
+      }
 
       bb_entry** bbm = func_bb_map[cfuncid];
       
@@ -460,6 +476,16 @@ static void read_covmap(u8* covmap_file) {
         bbm[cbb]->line = cline;
       }
 
+    }
+
+    /* Copy our local list of function IDs to the global */
+    func_id_list = ck_alloc(func_id_listlen * sizeof(u16));
+    memcpy(func_id_list, funcids, func_id_listlen * sizeof(u16));
+
+    if (!func_id_fixed) {
+      /* Start at the beginning of our list, initialize our SHM */
+      func_id_listidx = 0;
+      *func_id = func_id_list[0];
     }
 
     fclose(f);
@@ -1731,10 +1757,6 @@ EXP_ST void setup_funcid_shm(void) {
 
   /* Explicitly initialize with 0 */
   *func_id = 0;
-
-  shm_str = getenv("AFL_COV_FUNC_ID");
-  if (shm_str)
-    *func_id = atoi(shm_str);
 }
 
 EXP_ST void setup_shm(void) {
