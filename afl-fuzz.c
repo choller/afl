@@ -4512,7 +4512,7 @@ static void show_stats(void) {
 
   sprintf(tmp, "%05d", last_path_bitmap_pos);
 
-  SAYF(bV bSTOP "  last transition : " cRST "%-58s" bSTG bV "\n", tmp);
+  SAYF(bV bSTOP "  last new path : " cRST "%-58s" bSTG bV "\n", tmp);
 
   if (last_path_from) {
      sprintf(tmp, "%s:%d", last_path_from->filename, last_path_from->line);
