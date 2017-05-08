@@ -419,6 +419,8 @@ static void read_covmap(u8* covmap_file) {
       PFATAL("Unable to open specified coverage map");
 
     while (fgets(tmp, MAX_LINE, f)) {
+      u32 line_len = strlen(tmp);
+      if (line_len && tmp[line_len - 1] == '\n') tmp[line_len - 1] = '\0';
 
       u8* tok = strtok(tmp, " ");
       u32 idx = 0;
