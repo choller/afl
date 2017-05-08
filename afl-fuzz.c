@@ -8603,9 +8603,14 @@ int main(int argc, char** argv) {
   if (getenv("AFL_PYTHON_MODULE") && !with_python_support)
     FATAL("Your AFL binary was built without Python support");
 
+  u8* func_id_str = getenv("AFL_COV_FUNC_ID");
+  if (func_id_str) {
+    *func_id = atoi(func_id_str);
+    func_id_fixed = 1;
+  }
+
   if (getenv("AFL_COVMAP"))
     read_covmap(getenv("AFL_COVMAP"));
-    
 
   setup_cmdline_file(argv + optind);
   read_testcases();
