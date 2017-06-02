@@ -4570,7 +4570,10 @@ static void show_stats(void) {
   if (!*func_id) {
     sprintf(tmp, "%s", "<no function currently focused>");
   } else if (func_id_map[*func_id]) {
-    sprintf(tmp, "%s", func_id_map[*func_id]);
+    /* The 60 char limit here is just a safety net.
+       Demangled function names without params should
+       likely always fit in here. */
+    sprintf(tmp, "%.60s", func_id_map[*func_id]);
   } else {
     sprintf(tmp, "%s", "<unknown> (global? check coverage map?)");
   }
@@ -4582,7 +4585,10 @@ static void show_stats(void) {
   SAYF(bV bSTOP "  last new path : " cRST "%-60s" bSTG bV "\n", tmp);
 
   if (last_path_from) {
-     sprintf(tmp, "%s:%d", last_path_from->filename, last_path_from->line);
+     /* Filename limited to 60 chars to make sure it fits into the UI.
+        This could be improved by trimming the front of the string and only
+        showing the last x characters (which are probably more helpful). */
+     sprintf(tmp, "%.60s:%d", last_path_from->filename, last_path_from->line);
   } else {
      sprintf(tmp, "<unknown>");
   }
@@ -4591,7 +4597,7 @@ static void show_stats(void) {
   SAYF(bV bSTOP "%-78s" bSTG bV "\n", "  -> ");
 
   if (last_path_to) {
-     sprintf(tmp, "%s:%d", last_path_to->filename, last_path_to->line);
+     sprintf(tmp, "%.60s:%d", last_path_to->filename, last_path_to->line);
   } else {
      sprintf(tmp, "<unknown>");
   }
