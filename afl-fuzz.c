@@ -483,9 +483,8 @@ static void read_covmap(u8* covmap_file) {
     memcpy(func_id_list, funcids, func_id_listlen * sizeof(u16));
 
     if (!func_id_fixed) {
-      /* Start at the beginning of our list, initialize our SHM */
-      func_id_listidx = 0;
-      *func_id = func_id_list[0];
+      /* Initialize our SHM to 0 first for startup */
+      *func_id = 0;
     }
 
     fclose(f);
