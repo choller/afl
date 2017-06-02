@@ -4691,7 +4691,7 @@ static u8 trim_case_python(char** argv, struct queue_entry* q, u8* in_buf) {
 
     write_to_testcase(retbuf, retlen);
 
-    fault = run_target(argv);
+    fault = run_target(argv, exec_tmout);
     trim_execs++;
 
     if (stop_soon || fault == FAULT_ERROR) goto abort_trimming;
