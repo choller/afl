@@ -8753,6 +8753,9 @@ int main(int argc, char** argv) {
     if (stop_soon) goto stop_fuzzing;
   }
 
+  if (func_id_list)
+    *func_id = func_id_list[0];
+
   while (1) {
 
     u8 skipped_fuzz;
