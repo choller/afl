@@ -526,13 +526,22 @@ static void update_last_path() {
 
    bb_entry** bbm = func_bb_map[*func_id];
 
-   u32 i;
+   /* Invalidate last_path variables */
+   last_path_from = NULL;
+   last_path_to = NULL;
 
-   for (i = 0; i < MAP_SIZE; ++i) {
+   for (u32 i = 0; i < MAP_SIZE; ++i) {
      if (!bbm[i]) continue;
 
-     // Looking for prev >> 1 ^ cur = last_path_bitmap_pos
-     u32 cand = (last_path_bitmap_pos ^ i) << 1;
+     /* AFL calculates bitmap_pos = prev_loc ^ cur_loc and then
+        stores prev_loc = cur_loc >> 1. So in order to reverse this
+        process, we first need to xor our current bitmap position with
+        the suspected destination basic block (cur_loc), yielding 
+        prev_loc >> 1. We then reverse the bitshift and look if we can
+        find a matching basic block in the same function. Since the last
+        bit is dropped due to the bit shift, there are two possibilities
+        for the second basic block that we need to check. */
+     u32 cand = (( last_path_bitmap_pos ^ i ) << 1 ) % MAP_SIZE;
 
      if (bbm[cand]) {
         last_path_from = bbm[cand];
