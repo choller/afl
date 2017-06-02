@@ -1214,7 +1214,7 @@ static void mark_as_redundant(struct queue_entry* q, u8 state) {
 
 /* Append new test case to the queue. */
 
-static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
+static void add_to_queue(u8* fname, u32 len, u8 passed_det, u8 trimmed) {
 
   struct queue_entry* q = ck_alloc(sizeof(struct queue_entry));
 
@@ -1222,6 +1222,7 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
   q->len          = len;
   q->depth        = cur_depth + 1;
   q->passed_det   = passed_det;
+  q->trim_done    = trimmed;
 
   if (q->depth > max_depth) max_depth = q->depth;
 
@@ -1991,7 +1992,7 @@ static void read_testcases(void) {
     if (!access(dfn, F_OK)) passed_det = 1;
     ck_free(dfn);
 
-    add_to_queue(fn, st.st_size, passed_det);
+    add_to_queue(fn, st.st_size, passed_det, 1);
 
   }
 
@@ -3653,7 +3654,7 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 
 #endif /* ^!SIMPLE_FILES */
 
-    add_to_queue(fn, len, 0);
+    add_to_queue(fn, len, 0, 0);
 
     if (hnb == 2) {
       queue_top->has_new_cov = 1;
