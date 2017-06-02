@@ -573,6 +573,62 @@ enum {
 
 static PyObject *py_functions[PY_FUNC_COUNT];
 
+static FILE* py_exc_logfile;
+
+static void log_handled_exc_py() {
+  if (!py_exc_logfile) {
+    u8* fn = alloc_printf("%s/py_exc.log", out_dir);
+    if (!(py_exc_logfile = fopen(fn, "w")))
+      PFATAL("Unable to write Python Exception Log");
+    ck_free(fn);
+  }
+
+  PyObject* py_err = PyObject_GetAttrString(py_module, "err");
+  if (py_err != NULL) {
+    if (py_err == Py_None) {
+      Py_DECREF(py_err);
+      return;
+    }
+
+    PyObject* py_err_str = PyObject_Str(py_err);
+
+#if 0 /* Can be used to output to screen */
+      SAYF(bSTOP RESET_G1 CURSOR_SHOW cRST cLRD);
+      SAYF("\n[-] Handled Python Exception : ");
+      SAYF("\n\n%s", PyString_AsString(py_err_str));
+#endif
+
+    fprintf(py_exc_logfile, "%s\n\n", PyString_AsString(py_err_str));
+    fflush(py_exc_logfile);
+
+    Py_DECREF(py_err_str);
+    Py_DECREF(py_err);
+
+    if (PyObject_SetAttrString(py_module, "err", Py_None) < 0)
+      FATAL("PyObject_SetAttrString failed");
+  }
+}
+
+static void handle_py_err(u8 fatal) {
+  // Up Up Down Down Left Right Left Right B A
+  SAYF(bSTOP RESET_G1 CURSOR_SHOW cRST cLRD);
+
+  if (fatal)
+    SAYF("\n[-] PROGRAM ABORT : ");
+  else
+    SAYF("\n[-] PROGRAM WARN  : ");
+
+  SAYF(cBRI "Python Exception");
+  SAYF(cRST "\n");
+  
+  PyErr_Print();
+    
+  SAYF(cLRD "\n         Location : " cRST "%s(), %s:%u\n\n",
+    __FUNCTION__, __FILE__, __LINE__);
+
+  if (fatal) exit(1);
+}
+
 static int init_py() {
   Py_Initialize();
   u8* module_name = getenv("AFL_PYTHON_MODULE");
@@ -596,11 +652,11 @@ static int init_py() {
           if (py_idx >= PY_FUNC_INIT_TRIM && py_idx <= PY_FUNC_TRIM) {
             // Implementing the trim API is optional for now
             if (PyErr_Occurred())
-              PyErr_Print();
+              handle_py_err(0);
             py_notrim = 1;
           } else {
             if (PyErr_Occurred())
-              PyErr_Print();
+              handle_py_err(0);
             fprintf(stderr, "Cannot find/call function with index %d in external Python module.\n", py_idx);
             return 1;
           }
@@ -633,14 +689,10 @@ static int init_py() {
       Py_DECREF(py_args);
 
       if (py_value == NULL) {
-        PyErr_Print();
-        fprintf(stderr,"Call failed\n");
-        return 1;
-      }
+        handle_py_err(1);
+      } else Py_DECREF(py_value);
     } else {
-      PyErr_Print();
-      fprintf(stderr, "Failed to load \"%s\"\n", module_name);
-      return 1;
+      handle_py_err(1);
     }
   }
 
@@ -668,6 +720,7 @@ static void fuzz_py(char* buf, size_t buflen, char* add_buf, size_t add_buflen, 
     if (!py_value) {
       Py_DECREF(py_args);
       fprintf(stderr, "Cannot convert argument\n");
+      log_handled_exc_py();
       return;
     }
 
@@ -677,6 +730,7 @@ static void fuzz_py(char* buf, size_t buflen, char* add_buf, size_t add_buflen, 
     if (!py_value) {
       Py_DECREF(py_args);
       fprintf(stderr, "Cannot convert argument\n");
+      log_handled_exc_py();
       return;
     }
 
@@ -691,10 +745,9 @@ static void fuzz_py(char* buf, size_t buflen, char* add_buf, size_t add_buflen, 
       *ret = malloc(*retlen);
       memcpy(*ret, PyByteArray_AsString(py_value), *retlen);
       Py_DECREF(py_value);
+      log_handled_exc_py();
     } else {
-      PyErr_Print();
-      fprintf(stderr,"Call failed\n");
-      return;
+      handle_py_err(1);
     }
   }
 }
@@ -706,6 +759,7 @@ static u32 init_trim_py(char* buf, size_t buflen) {
   py_value = PyByteArray_FromStringAndSize(buf, buflen);
   if (!py_value) {
     Py_DECREF(py_args);
+    log_handled_exc_py();
     FATAL("Failed to convert arguments");
   }
 
@@ -717,11 +771,13 @@ static u32 init_trim_py(char* buf, size_t buflen) {
   if (py_value != NULL) {
     u32 retcnt = PyInt_AsLong(py_value);
     Py_DECREF(py_value);
+    log_handled_exc_py();
     return retcnt;
   } else {
-    PyErr_Print();
-    FATAL("Call failed");
+    handle_py_err(1);
   }
+
+  return 0;
 }
 
 static u32 post_trim_py(char success) {
@@ -732,6 +788,7 @@ static u32 post_trim_py(char success) {
   py_value = PyBool_FromLong(success);
   if (!py_value) {
     Py_DECREF(py_args);
+    log_handled_exc_py();
     FATAL("Failed to convert arguments");
   }
 
@@ -743,11 +800,13 @@ static u32 post_trim_py(char success) {
   if (py_value != NULL) {
     u32 retcnt = PyInt_AsLong(py_value);
     Py_DECREF(py_value);
+    log_handled_exc_py();
     return retcnt;
   } else {
-    PyErr_Print();
-    FATAL("Call failed");
+    handle_py_err(1);
   }
+
+  return 0;
 }
 
 static void trim_py(char** ret, size_t* retlen) {
@@ -762,9 +821,9 @@ static void trim_py(char** ret, size_t* retlen) {
     *ret = malloc(*retlen);
     memcpy(*ret, PyByteArray_AsString(py_value), *retlen);
     Py_DECREF(py_value);
+    log_handled_exc_py();
   } else {
-    PyErr_Print();
-    FATAL("Call failed");
+    handle_py_err(1);
   }
 }
 
