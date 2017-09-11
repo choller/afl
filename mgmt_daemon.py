@@ -85,7 +85,6 @@ class LibFuzzerMonitor(threading.Thread):
     def getTestcase(self):
         return self.testcase
 
-
 def get_machine_id(base_dir):
     '''
     Get (and if necessary generate) the machine id which is based on
@@ -759,15 +758,15 @@ def main(argv=None):
         argv = sys.argv[1:]
 
     # setup argparser
-    parser = argparse.ArgumentParser(usage='%s --libfuzzer or --aflfuzzer [OPTIONS] --cmd <COMMAND AND ARGUMENTS>' % program_name)
+    parser = argparse.ArgumentParser(usage='%s --libfuzzer or --aflfuzz [OPTIONS] --cmd <COMMAND AND COMMANDS>' % program_name)
 
-    mainGroup = parser.add_argument_group(title="Main arguments", description=None)
-    aflGroup = parser.add_argument_group(title="AFL Arguments", description="Use these arguments with AFL monitoring")
-    libfGroup = parser.add_argument_group(title="Libfuzzer Arguments", description="Use these arguments with Libfuzzer monitoring" )
-    fmGroup = parser.add_argument_group(title="FuzzManager Arguments", description="Use these to specify FuzzManager parameters" )
+    mainGroup = parser.add_argument_group(title="Main Options", description=None)
+    aflGroup = parser.add_argument_group(title="AFL Options", description="Use these arguments in AFL mode")
+    libfGroup = parser.add_argument_group(title="Libfuzzer Options", description="Use these arguments in Libfuzzer mode" )
+    fmGroup = parser.add_argument_group(title="FuzzManager Options", description="Use these to specify FuzzManager parameters" )
   
-    mainGroup.add_argument("--libfuzzer", dest="libfuzzer", action='store_true', help="Enable LibFuzzer Monitoring")
-    mainGroup.add_argument("--aflfuzzer", dest="aflfuzzer", action='store_true', help="Enable AFL Monitoring")
+    mainGroup.add_argument("--libfuzzer", dest="libfuzzer", action='store_true', help="Enable LibFuzzer mode")
+    mainGroup.add_argument("--aflfuzz", dest="aflfuzz", action='store_true', help="Enable AFL mode")
     mainGroup.add_argument("--fuzzmanager", dest="fuzzmanager", action='store_true', help="Use FuzzManager to submit crash results")
 
     libfGroup.add_argument('--env', dest='env', nargs='+', type=str, help="List of environment variables in the form 'KEY=VALUE'")
@@ -820,9 +819,11 @@ def main(argv=None):
         return 2
 
     opts = parser.parse_args(argv)
+	
+    if not opts.libfuzzer and not opts.aflfuzz:
+	opts.aflfuzz = True
 
-    if opts.libfuzzer:
-        
+    if opts.libfuzzer:       
         if not opts.rargs:
             print("Error: No arguments specified", file=sys.stderr)
             return 2
@@ -908,7 +909,7 @@ def main(argv=None):
                 print("Too many crashes with the same signature, exiting...", file=sys.stderr)
                 break
 	
-    if opts.aflfuzzer:
+    if opts.aflfuzz:
         if opts.firefox or opts.firefox_start_afl:
             if not haveFFPuppet:
                 print("Error: --firefox and --firefox-start-afl require FFPuppet to be installed", file=sys.stderr)
