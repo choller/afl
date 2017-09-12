@@ -758,7 +758,7 @@ def main(argv=None):
         argv = sys.argv[1:]
 
     # setup argparser
-    parser = argparse.ArgumentParser(usage='%s --libfuzzer or --aflfuzz [OPTIONS] --cmd <COMMAND AND COMMANDS>' % program_name)
+    parser = argparse.ArgumentParser(usage='%s --libfuzzer or --aflfuzz [OPTIONS] --cmd <COMMAND AND ARGUMENTS>' % program_name)
 
     mainGroup = parser.add_argument_group(title="Main Options", description=None)
     aflGroup = parser.add_argument_group(title="AFL Options", description="Use these arguments in AFL mode")
