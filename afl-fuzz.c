@@ -117,12 +117,14 @@ EXP_ST u8  skip_deterministic,        /* Skip deterministic stages?       */
            in_place_resume,           /* Attempt in-place resume?         */
            auto_changed,              /* Auto-generated tokens changed?   */
            no_cpu_meter_red,          /* Feng shui on the status screen   */
+           no_arith,                  /* Skip most arithmetic ops         */
            shuffle_queue,             /* Shuffle input queue?             */
            bitmap_changed = 1,        /* Time to update bitmap?           */
            qemu_mode,                 /* Running in QEMU mode?            */
            skip_requested,            /* Skip request, via SIGUSR1        */
            run_over10m,               /* Run time over 10 minutes?        */
-           persistent_mode;           /* Running in persistent mode?      */
+           persistent_mode,           /* Running in persistent mode?      */
+           fast_cal;                  /* Try to calibrate faster?         */
 
 EXP_ST u8  debug,                     /* Debug mode                       */
            python_only;               /* Python-only mode                 */
@@ -2654,11 +2656,14 @@ static u8 run_target(char** argv, u32 timeout) {
 
   /* Report outcome to caller. */
 
-  if (child_timed_out) return FAULT_TMOUT;
-
   if (WIFSIGNALED(status) && !stop_soon) {
+
     kill_signal = WTERMSIG(status);
+
+    if (child_timed_out && kill_signal == SIGKILL) return FAULT_TMOUT;
+
     return FAULT_CRASH;
+
   }
 
   /* A somewhat nasty hack for MSAN, which doesn't support abort_on_error and
@@ -2769,7 +2774,7 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
   q->cal_failed++;
 
   stage_name = "calibration";
-  stage_max  = cal_cycles;
+  stage_max  = fast_cal ? 3 : cal_cycles;
 
   /* Make sure the forkserver is up before we do anything, and let's not
      count its spin-up time toward binary calibration. */
@@ -3421,6 +3426,12 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
         write_to_testcase(mem, len);
         new_fault = run_target(argv, hang_tmout);
 
+        /* A corner case that one user reported bumping into: increasing the
+           timeout actually uncovers a crash. Make sure we don't discard it if
+           so. */
+
+        if (!stop_soon && new_fault == FAULT_CRASH) goto keep_as_crash;
+
         if (stop_soon || new_fault != FAULT_TMOUT) return keeping;
 
       }
@@ -3444,6 +3455,8 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
       break;
 
     case FAULT_CRASH:
+
+keep_as_crash:
 
       /* This is handled in a manner roughly similar to timeouts,
          except for slightly different limits and no need to re-run test
@@ -3531,10 +3544,10 @@ static u32 find_start_position(void) {
   i = read(fd, tmp, sizeof(tmp) - 1); (void)i; /* Ignore errors */
   close(fd);
 
-  off = strstr(tmp, "cur_path       : ");
+  off = strstr(tmp, "cur_path          : ");
   if (!off) return 0;
 
-  ret = atoi(off + 17);
+  ret = atoi(off + 20);
   if (ret >= queued_paths) ret = 0;
   return ret;
 
@@ -3622,7 +3635,7 @@ static void write_stats_file(double bitmap_cvg, double stability, double eps) {
              "paths_found       : %u\n"
              "paths_imported    : %u\n"
              "max_depth         : %u\n"
-             "cur_path          : %u\n"
+             "cur_path          : %u\n" /* Must match find_start_position() */
              "pending_favs      : %u\n"
              "pending_total     : %u\n"
              "variable_paths    : %u\n"
@@ -3910,9 +3923,13 @@ static void maybe_delete_out_dir(void) {
   /* Okay, let's get the ball rolling! First, we need to get rid of the entries
      in <out_dir>/.synced/.../id:*, if any are present. */
 
-  fn = alloc_printf("%s/.synced", out_dir);
-  if (delete_files(fn, NULL)) goto dir_cleanup_failed;
-  ck_free(fn);
+  if (!in_place_resume) {
+
+    fn = alloc_printf("%s/.synced", out_dir);
+    if (delete_files(fn, NULL)) goto dir_cleanup_failed;
+    ck_free(fn);
+
+  }
 
   /* Next, we need to clean up <out_dir>/queue/.state/ subdirectories: */
 
@@ -4646,7 +4663,8 @@ static void show_init_stats(void) {
 }
 
 
-/* Find first power of two greater or equal to val. */
+/* Find first power of two greater or equal to val (assuming val under
+   2^31). */
 
 static u32 next_p2(u32 val) {
 
@@ -4885,8 +4903,6 @@ static u8 trim_case(char** argv, struct queue_entry* q, u8* in_buf) {
     update_bitmap_score(q);
 
   }
-
-
 
 abort_trimming:
 
@@ -5750,6 +5766,8 @@ static u8 fuzz_one(char** argv) {
 
 skip_bitflip:
 
+  if (no_arith) goto skip_arith;
+
   /**********************
    * ARITHMETIC INC/DEC *
    **********************/
@@ -6063,7 +6081,7 @@ skip_arith:
 
   /* Setting 16-bit integers, both endians. */
 
-  if (len < 2) goto skip_interest;
+  if (no_arith || len < 2) goto skip_interest;
 
   stage_name  = "interest 16/8";
   stage_short = "int16";
@@ -7574,7 +7592,10 @@ EXP_ST void setup_dirs_fds(void) {
   if (sync_id) {
 
     tmp = alloc_printf("%s/.synced/", out_dir);
-    if (mkdir(tmp, 0700)) PFATAL("Unable to create '%s'", tmp);
+
+    if (mkdir(tmp, 0700) && (!in_place_resume || errno != EEXIST))
+      PFATAL("Unable to create '%s'", tmp);
+
     ck_free(tmp);
 
   }
@@ -8350,7 +8371,9 @@ int main(int argc, char** argv) {
 
   if (getenv("AFL_NO_FORKSRV"))    no_forkserver    = 1;
   if (getenv("AFL_NO_CPU_RED"))    no_cpu_meter_red = 1;
+  if (getenv("AFL_NO_ARITH"))      no_arith         = 1;
   if (getenv("AFL_SHUFFLE_QUEUE")) shuffle_queue    = 1;
+  if (getenv("AFL_FAST_CAL"))      fast_cal         = 1;
 
   if (getenv("AFL_HANG_TMOUT")) {
     hang_tmout = atoi(getenv("AFL_HANG_TMOUT"));
