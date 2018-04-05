@@ -36,7 +36,10 @@ CXXFLAGS    ?= -O3 -funroll-loops
 CXXFLAGS    += -Wall -D_FORTIFY_SOURCE=2 -g -Wno-pointer-sign \
                -DVERSION=\"$(VERSION)\" -Wno-variadic-macros
 
-CLANG_CFL    = `$(LLVM_CONFIG) --cxxflags` -fno-rtti -fpic $(CXXFLAGS)
+LLVM_CONFIG_CXXFLAGS := $(shell $(LLVM_CONFIG) --cxxflags)
+LLVM_CONFIG_CXXFLAGS := $(filter-out -fvisibility-inlines-hidden,$(LLVM_CONFIG_CXXFLAGS))
+
+CLANG_CFL    = $(LLVM_CONFIG_CXXFLAGS) -fno-rtti -fpic $(CXXFLAGS)
 CLANG_LFL    = `$(LLVM_CONFIG) --ldflags` $(LDFLAGS)
 
 # User teor2345 reports that this is required to make things work on MacOS X.
